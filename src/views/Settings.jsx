@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Trash2, Save, Download, Upload } from 'lucide-react';
+import { ArrowLeft, Trash2, Save, Download, Upload, FileSpreadsheet } from 'lucide-react';
 import { deleteDatabase, exportAllData, importAllData } from '../services/db';
+import * as XLSX from 'xlsx';
 
 export default function Settings() {
   const navigate = useNavigate();
@@ -32,7 +33,62 @@ export default function Settings() {
     }
   };
 
-  /* ── EXPORT ─────────────────────────────────────── */
+  /* ── EXPORT EXCEL ───────────────────────────────── */
+  const handleExportExcel = async () => {
+    try {
+      const backup = await exportAllData();
+      const wb = XLSX.utils.book_new();
+
+      // Sheet 1: Transactions
+      const txRows = (backup.transactions || []).map(tx => ({
+        'Date':        new Date(tx.date).toLocaleString(),
+        'Customer':    tx.storeName,
+        'Item':        tx.itemName,
+        'Type':        tx.type === 'debit' ? 'Udhar (Given)' : 'Payment (Received)',
+        'Amount (Rs)': Number(tx.amount),
+      }));
+      const txSheet = XLSX.utils.json_to_sheet(txRows.length ? txRows : [{ Note: 'No transactions yet' }]);
+      txSheet['!cols'] = [{ wch: 22 }, { wch: 20 }, { wch: 25 }, { wch: 20 }, { wch: 12 }];
+      XLSX.utils.book_append_sheet(wb, txSheet, 'Transactions');
+
+      // Sheet 2: Customers
+      const custRows = (backup.customers || []).map(c => ({
+        'Customer Name': c.name,
+        'Mobile Number': c.mobile || '—',
+      }));
+      const custSheet = XLSX.utils.json_to_sheet(custRows.length ? custRows : [{ Note: 'No customers yet' }]);
+      custSheet['!cols'] = [{ wch: 25 }, { wch: 18 }];
+      XLSX.utils.book_append_sheet(wb, custSheet, 'Customers');
+
+      // Sheet 3: Parties
+      const partyRows = (backup.parties || []).map(p => ({
+        'Party Name':   p.name,
+        'Address':      p.address || '—',
+        'Party Number': p.partyNumber || '—',
+      }));
+      const partySheet = XLSX.utils.json_to_sheet(partyRows.length ? partyRows : [{ Note: 'No parties yet' }]);
+      partySheet['!cols'] = [{ wch: 25 }, { wch: 30 }, { wch: 15 }];
+      XLSX.utils.book_append_sheet(wb, partySheet, 'Parties');
+
+      // Sheet 4: Cash Register
+      const galaRows = (backup.gala || []).map(g => ({
+        'Date':        new Date(g.date).toLocaleString(),
+        'Type':        g.type === 'sale' ? 'Sale (Cash In)' : 'Expense (Cash Out)',
+        'Description': g.description || '—',
+        'Amount (Rs)': Number(g.amount),
+      }));
+      const galaSheet = XLSX.utils.json_to_sheet(galaRows.length ? galaRows : [{ Note: 'No gala entries yet' }]);
+      galaSheet['!cols'] = [{ wch: 22 }, { wch: 20 }, { wch: 25 }, { wch: 12 }];
+      XLSX.utils.book_append_sheet(wb, galaSheet, 'Cash Register');
+
+      const date = new Date().toISOString().slice(0, 10);
+      XLSX.writeFile(wb, `shop-ledger-${date}.xlsx`);
+    } catch (err) {
+      alert('Excel export failed: ' + err.message);
+    }
+  };
+
+  /* ── EXPORT JSON ─────────────────────────────────── */
   const handleExport = async () => {
     try {
       const backup = await exportAllData();
@@ -104,6 +160,16 @@ export default function Settings() {
           >
             <Download size={18} />
             Export Backup (.json)
+          </button>
+
+          {/* Excel Export */}
+          <button
+            onClick={handleExportExcel}
+            className="btn"
+            style={{ width: 'auto', padding: '0.65rem 1.25rem', background: 'rgba(16,185,129,0.1)', color: 'var(--success)', border: '1px solid rgba(16,185,129,0.3)' }}
+          >
+            <FileSpreadsheet size={18} />
+            Export as Excel (.xlsx)
           </button>
 
           {/* Import */}
