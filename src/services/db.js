@@ -159,3 +159,44 @@ export const getGalaEntries = async () => {
   const db = await initDB();
   return await db.getAll('gala');
 };
+
+// ── Backup & Restore ────────────────────────────────────────────────────────
+
+export const exportAllData = async () => {
+  const db = await initDB();
+  const backup = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    transactions: await db.getAll('transactions'),
+    customers:    await db.getAll('customers'),
+    parties:      await db.getAll('parties'),
+    gala:         await db.getAll('gala'),
+  };
+  return backup;
+};
+
+export const importAllData = async (backup) => {
+  const db = await initDB();
+
+  // Clear existing data first
+  await db.clear('transactions');
+  await db.clear('customers');
+  await db.clear('parties');
+  try { await db.clear('gala'); } catch {}
+
+  // Re-insert everything
+  for (const tx of (backup.transactions || [])) {
+    const { id, ...rest } = tx;
+    await db.add('transactions', rest);
+  }
+  for (const c of (backup.customers || [])) {
+    await db.put('customers', c);
+  }
+  for (const p of (backup.parties || [])) {
+    await db.put('parties', p);
+  }
+  for (const g of (backup.gala || [])) {
+    const { id, ...rest } = g;
+    await db.add('gala', rest);
+  }
+};
