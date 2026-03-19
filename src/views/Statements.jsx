@@ -184,30 +184,68 @@ export default function Statements() {
 
 
 
-      <h3 style={{ fontSize: '1rem', fontWeight: 600, marginTop: '1.5rem', marginBottom: '1rem', color: 'var(--text-muted)' }}>Period Details ({transactions.length} entries)</h3>
+      {/* Group by customer */}
+      {(() => {
+        const grouped = {};
+        transactions.forEach(tx => {
+          const key = tx.storeName;
+          if (!grouped[key]) grouped[key] = { debit: 0, credit: 0, entries: 0 };
+          if (tx.type === 'debit') grouped[key].debit += Number(tx.amount);
+          else grouped[key].credit += Number(tx.amount);
+          grouped[key].entries += 1;
+        });
+        const rows = Object.entries(grouped).sort((a, b) => a[0].localeCompare(b[0]));
 
-      <div className="transaction-list" style={{ marginTop: 0 }}>
-        {transactions.length === 0 ? (
-          <p className="text-center text-muted mt-4">No records found for this period.</p>
-        ) : (
-          transactions.map(tx => (
-            <div key={tx.id} className="transaction-item" style={{ display: 'flex', borderLeft: `4px solid ${tx.type === 'credit' ? 'var(--success)' : 'transparent'}` }}>
-              <div className="tx-details" style={{ flex: 1 }}>
-                <h4>{tx.storeName}</h4>
-                <p>{tx.itemName} • {format(new Date(tx.date), 'dd MMM yyyy, h:mm a')}</p>
+        return (
+          <>
+            <h3 style={{ fontSize: '1rem', fontWeight: 600, marginTop: '1.5rem', marginBottom: '1rem', color: 'var(--text-muted)' }}>
+              Period Details ({rows.length} customer{rows.length !== 1 ? 's' : ''})
+            </h3>
+            {rows.length === 0 ? (
+              <p className="text-center text-muted mt-4">No records found for this period.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                {rows.map(([customerName, data]) => {
+                  const net = data.debit - data.credit;
+                  return (
+                    <div
+                      key={customerName}
+                      className="glass-card"
+                      onClick={() => navigate(`/customer/${encodeURIComponent(customerName)}`)}
+                      style={{ display: 'flex', alignItems: 'center', padding: '1rem 1.25rem', cursor: 'pointer', borderLeft: `4px solid ${net > 0 ? 'var(--danger)' : 'var(--success)'}`, transition: 'transform 0.15s' }}
+                      onMouseOver={e => e.currentTarget.style.transform = 'translateX(3px)'}
+                      onMouseOut={e => e.currentTarget.style.transform = 'translateX(0)'}
+                    >
+                      {/* Avatar */}
+                      <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'rgba(79,70,229,0.1)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '1rem', flexShrink: 0, marginRight: '1rem' }}>
+                        {customerName.charAt(0).toUpperCase()}
+                      </div>
+
+                      {/* Name + stats */}
+                      <div style={{ flex: 1 }}>
+                        <h4 style={{ margin: 0, fontWeight: 600, fontSize: '0.95rem' }}>{customerName}</h4>
+                        <div style={{ display: 'flex', gap: '1rem', marginTop: '0.25rem', fontSize: '0.8rem', color: 'var(--text-muted)', flexWrap: 'wrap' }}>
+                          <span>📦 Udhar: <strong style={{ color: 'var(--danger)' }}>Rs {data.debit.toLocaleString()}</strong></span>
+                          <span>✅ Paid: <strong style={{ color: 'var(--success)' }}>Rs {data.credit.toLocaleString()}</strong></span>
+                          <span style={{ color: 'var(--text-muted)' }}>{data.entries} entries</span>
+                        </div>
+                      </div>
+
+                      {/* Net balance */}
+                      <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                        <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-muted)' }}>Net Pending</p>
+                        <p style={{ margin: 0, fontWeight: 700, fontSize: '1.1rem', color: net > 0 ? 'var(--danger)' : 'var(--success)' }}>
+                          Rs {Math.abs(net).toLocaleString()}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                <div className="tx-amount" style={{ color: tx.type === 'credit' ? 'var(--success)' : 'var(--danger)' }}>
-                  {tx.type === 'credit' ? '-' : ''}Rs {tx.amount}
-                </div>
-                <button onClick={() => handleDelete(tx.id)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '0.25rem' }}>
-                  <Trash2 size={18} />
-                </button>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
+            )}
+          </>
+        );
+      })()}
     </div>
   );
 }
