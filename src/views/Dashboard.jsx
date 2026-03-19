@@ -1,32 +1,26 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { getAllTransactions, getCustomers, addGalaEntry, getGalaEntries } from '../services/db';
+import { getAllTransactions, getCustomers } from '../services/db';
 import { format, isToday } from 'date-fns';
-import { Users, Truck, Search, FileText, ShoppingBag, TrendingDown, ArrowRight, ChevronRight } from 'lucide-react';
+import { Users, Truck, Search, FileText, ArrowRight, ChevronRight } from 'lucide-react';
 
 export default function Dashboard() {
   const [todayTransactions, setTodayTransactions] = useState([]);
+  const [allTransactions, setAllTransactions] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [galaEntries, setGalaEntries] = useState([]);
-  const [saleAmount, setSaleAmount] = useState('');
-  const [expenseAmount, setExpenseAmount] = useState('');
-  const [saleDesc, setSaleDesc] = useState('');
-  const [expenseDesc, setExpenseDesc] = useState('');
 
   const navigate = useNavigate();
 
   useEffect(() => {
     const fetchInitialData = async () => {
       const allTx = await getAllTransactions();
+      setAllTransactions(allTx);
       const todayTx = allTx.filter(tx => isToday(new Date(tx.date)));
       setTodayTransactions(todayTx.reverse());
 
       const allC = await getCustomers();
       setCustomers(allC);
-
-      const allGala = await getGalaEntries();
-      setGalaEntries(allGala.filter(g => isToday(new Date(g.date))));
     };
     fetchInitialData();
   }, []);
@@ -43,27 +37,14 @@ export default function Dashboard() {
     }
   };
 
-  const handleAddSale = async (e) => {
-    e.preventDefault();
-    if (!saleAmount || Number(saleAmount) <= 0) return;
-    await addGalaEntry({ type: 'sale', amount: saleAmount, description: saleDesc || 'Cash Sale' });
-    setSaleAmount(''); setSaleDesc('');
-    const fresh = await getGalaEntries();
-    setGalaEntries(fresh.filter(g => isToday(new Date(g.date))));
-  };
+  // Udhar stats
+  const dailyUdhar = todayTransactions
+    .filter(tx => tx.type === 'debit')
+    .reduce((s, tx) => s + Number(tx.amount), 0);
 
-  const handleAddExpense = async (e) => {
-    e.preventDefault();
-    if (!expenseAmount || Number(expenseAmount) <= 0) return;
-    await addGalaEntry({ type: 'expense', amount: expenseAmount, description: expenseDesc || 'Expense' });
-    setExpenseAmount(''); setExpenseDesc('');
-    const fresh = await getGalaEntries();
-    setGalaEntries(fresh.filter(g => isToday(new Date(g.date))));
-  };
-
-  const todaySales    = galaEntries.filter(g => g.type === 'sale').reduce((s, g) => s + g.amount, 0);
-  const todayExpenses = galaEntries.filter(g => g.type === 'expense').reduce((s, g) => s + g.amount, 0);
-  const netGala       = todaySales - todayExpenses;
+  const totalDebit  = allTransactions.filter(tx => tx.type === 'debit').reduce((s, tx) => s + Number(tx.amount), 0);
+  const totalCredit = allTransactions.filter(tx => tx.type === 'credit').reduce((s, tx) => s + Number(tx.amount), 0);
+  const totalUdharPending = totalDebit - totalCredit;
 
   const actionCard = (to, icon, label, color) => (
     <Link to={to} style={{ textDecoration: 'none' }}>
@@ -149,51 +130,17 @@ export default function Dashboard() {
       {/* ── MAIN CONTENT ─────────────────────────────────────── */}
       <main style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
 
-        {/* Daily Gala Summary ─ top stat strip */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem' }}>
-          <div className="glass-card" style={{ padding: '1.25rem', borderTop: '3px solid var(--success)' }}>
-            <p style={{ margin: '0 0 0.25rem', fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 500 }}>Today's Sales</p>
-            <p style={{ margin: 0, fontSize: '1.75rem', fontWeight: 700, color: 'var(--success)' }}>Rs {todaySales.toLocaleString()}</p>
-          </div>
+        {/* Udhar Stats */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
           <div className="glass-card" style={{ padding: '1.25rem', borderTop: '3px solid var(--danger)' }}>
-            <p style={{ margin: '0 0 0.25rem', fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 500 }}>Today's Expenses</p>
-            <p style={{ margin: 0, fontSize: '1.75rem', fontWeight: 700, color: 'var(--danger)' }}>Rs {todayExpenses.toLocaleString()}</p>
+            <p style={{ margin: '0 0 0.25rem', fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 500 }}>Today's Total Udhar Given</p>
+            <p style={{ margin: 0, fontSize: '1.75rem', fontWeight: 700, color: 'var(--danger)' }}>Rs {dailyUdhar.toLocaleString()}</p>
+            <p style={{ margin: '0.25rem 0 0', fontSize: '0.75rem', color: 'var(--text-muted)' }}>{todayTransactions.filter(tx => tx.type === 'debit').length} entries today</p>
           </div>
-          <div className="glass-card" style={{ padding: '1.25rem', borderTop: `3px solid ${netGala >= 0 ? 'var(--primary)' : 'var(--danger)'}` }}>
-            <p style={{ margin: '0 0 0.25rem', fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 500 }}>Net Cash (Gala)</p>
-            <p style={{ margin: 0, fontSize: '1.75rem', fontWeight: 700, color: netGala >= 0 ? 'var(--primary)' : 'var(--danger)' }}>Rs {netGala.toLocaleString()}</p>
-          </div>
-        </div>
-
-        {/* Gala Entry Forms */}
-        <div className="glass-card" style={{ padding: '1.25rem' }}>
-          <p style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '1rem' }}>Cash Register — Add Entry</p>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-            {/* Sale */}
-            <form onSubmit={handleAddSale}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
-                <ShoppingBag size={18} color="var(--success)" />
-                <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>Add Sale (Cash In)</span>
-              </div>
-              <input type="text" className="form-control" placeholder="Item / Description (optional)" value={saleDesc} onChange={e => setSaleDesc(e.target.value)} style={{ marginBottom: '0.5rem', fontSize: '0.875rem' }} />
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <input type="number" className="form-control" placeholder="Amount (Rs)" value={saleAmount} onChange={e => setSaleAmount(e.target.value)} min="1" required />
-                <button type="submit" className="btn" style={{ width: 'auto', background: 'var(--success)', color: '#fff', whiteSpace: 'nowrap', padding: '0 1rem' }}>+ Sale</button>
-              </div>
-            </form>
-
-            {/* Expense */}
-            <form onSubmit={handleAddExpense}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
-                <TrendingDown size={18} color="var(--danger)" />
-                <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>Add Expense (Cash Out)</span>
-              </div>
-              <input type="text" className="form-control" placeholder="What was bought? (optional)" value={expenseDesc} onChange={e => setExpenseDesc(e.target.value)} style={{ marginBottom: '0.5rem', fontSize: '0.875rem' }} />
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <input type="number" className="form-control" placeholder="Amount (Rs)" value={expenseAmount} onChange={e => setExpenseAmount(e.target.value)} min="1" required />
-                <button type="submit" className="btn" style={{ width: 'auto', background: 'var(--danger)', color: '#fff', whiteSpace: 'nowrap', padding: '0 1rem' }}>- Spent</button>
-              </div>
-            </form>
+          <div className="glass-card" style={{ padding: '1.25rem', borderTop: `3px solid ${totalUdharPending <= 0 ? 'var(--success)' : 'var(--primary)'}` }}>
+            <p style={{ margin: '0 0 0.25rem', fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 500 }}>Total Udhar Pending (All Customers)</p>
+            <p style={{ margin: 0, fontSize: '1.75rem', fontWeight: 700, color: totalUdharPending <= 0 ? 'var(--success)' : 'var(--primary)' }}>Rs {totalUdharPending.toLocaleString()}</p>
+            <p style={{ margin: '0.25rem 0 0', fontSize: '0.75rem', color: 'var(--text-muted)' }}>{customers.length} customers</p>
           </div>
         </div>
 

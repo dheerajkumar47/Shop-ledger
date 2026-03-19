@@ -55,6 +55,11 @@ export const getTransactionsByCustomer = async (storeName) => {
   return await db.getAllFromIndex(STORE_NAME, 'storeName', storeName);
 };
 
+export const updateTransaction = async (tx) => {
+  const db = await initDB();
+  return await db.put(STORE_NAME, tx);
+};
+
 export const getAllTransactions = async () => {
   const db = await initDB();
   return await db.getAllFromIndex(STORE_NAME, 'date');

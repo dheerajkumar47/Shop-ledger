@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getTransactionsByCustomer, addTransaction, deleteTransaction } from '../services/db';
+import { getTransactionsByCustomer, addTransaction, deleteTransaction, updateTransaction } from '../services/db';
 import { format, parseISO, startOfDay, endOfDay } from 'date-fns';
-import { Download, Trash2, Plus, Minus, ArrowLeft } from 'lucide-react';
+import { Download, Trash2, Plus, Minus, ArrowLeft, Pencil, Check, X } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -18,6 +18,7 @@ export default function CustomerDetail() {
   const [debitItem, setDebitItem] = useState('');
   const [entryDate, setEntryDate] = useState(format(new Date(), "yyyy-MM-dd'T'HH:mm"));
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [editingTx, setEditingTx] = useState(null); // holds a copy of tx being edited
 
   useEffect(() => {
     loadTransactions();
@@ -81,6 +82,17 @@ export default function CustomerDetail() {
       await deleteTransaction(id);
       loadTransactions();
     }
+  };
+
+  const handleEditSave = async () => {
+    if (!editingTx) return;
+    await updateTransaction({
+      ...editingTx,
+      amount: Number(editingTx.amount),
+      date: new Date(editingTx.date).toISOString()
+    });
+    setEditingTx(null);
+    loadTransactions();
   };
 
   const generatePDF = () => {
@@ -245,19 +257,60 @@ export default function CustomerDetail() {
           <p className="text-center text-muted mt-4">No records found.</p>
         ) : (
           transactions.map(tx => (
-            <div key={tx.id} className="transaction-item" style={{ borderLeft: `4px solid ${tx.type === 'credit' ? 'var(--success)' : 'var(--danger)'}`}}>
-              <div className="tx-details" style={{ flex: 1 }}>
-                <h4>{tx.itemName}</h4>
-                <p>{format(new Date(tx.date), 'dd MMM yyyy, h:mm a')}</p>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                <div className="tx-amount" style={{ color: tx.type === 'credit' ? 'var(--success)' : 'var(--danger)' }}>
-                  {tx.type === 'credit' ? '-' : '+'}Rs {tx.amount}
+            <div key={tx.id} className="transaction-item" style={{ borderLeft: `4px solid ${tx.type === 'credit' ? 'var(--success)' : 'var(--danger)'}`, flexDirection: 'column', alignItems: 'stretch', gap: '0.5rem' }}>
+              {editingTx && editingTx.id === tx.id ? (
+                // ── Edit mode ──
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={editingTx.itemName}
+                    onChange={e => setEditingTx({ ...editingTx, itemName: e.target.value })}
+                    style={{ flex: 2, minWidth: 120 }}
+                    placeholder="Item name"
+                  />
+                  <input
+                    type="number"
+                    className="form-control"
+                    value={editingTx.amount}
+                    onChange={e => setEditingTx({ ...editingTx, amount: e.target.value })}
+                    style={{ flex: 1, minWidth: 90 }}
+                    min="1"
+                  />
+                  <input
+                    type="datetime-local"
+                    className="form-control"
+                    value={format(new Date(editingTx.date), "yyyy-MM-dd'T'HH:mm")}
+                    onChange={e => setEditingTx({ ...editingTx, date: e.target.value })}
+                    style={{ flex: 1, minWidth: 150 }}
+                  />
+                  <button onClick={handleEditSave} style={{ background: 'var(--success)', color: '#fff', border: 'none', borderRadius: 8, padding: '0.4rem 0.75rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <Check size={16} /> Save
+                  </button>
+                  <button onClick={() => setEditingTx(null)} style={{ background: 'rgba(0,0,0,0.06)', border: 'none', borderRadius: 8, padding: '0.4rem 0.75rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <X size={16} /> Cancel
+                  </button>
                 </div>
-                <button onClick={() => handleDelete(tx.id)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '0.25rem' }}>
-                  <Trash2 size={18} />
-                </button>
-              </div>
+              ) : (
+                // ── View mode ──
+                <div style={{ display: 'flex', alignItems: 'center' }}>
+                  <div className="tx-details" style={{ flex: 1 }}>
+                    <h4>{tx.itemName}</h4>
+                    <p>{format(new Date(tx.date), 'dd MMM yyyy, h:mm a')}</p>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <div className="tx-amount" style={{ color: tx.type === 'credit' ? 'var(--success)' : 'var(--danger)' }}>
+                      {tx.type === 'credit' ? '-' : '+'}Rs {tx.amount}
+                    </div>
+                    <button onClick={() => setEditingTx({ ...tx })} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '0.25rem' }} title="Edit">
+                      <Pencil size={16} />
+                    </button>
+                    <button onClick={() => handleDelete(tx.id)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '0.25rem' }} title="Delete">
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ))
         )}
