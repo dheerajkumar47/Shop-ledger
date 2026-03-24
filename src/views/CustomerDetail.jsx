@@ -16,7 +16,7 @@ export default function CustomerDetail() {
   const [creditAmount, setCreditAmount] = useState('');
   const [debitAmount, setDebitAmount] = useState('');
   const [debitItem, setDebitItem] = useState('');
-  const [entryDate, setEntryDate] = useState(format(new Date(), "yyyy-MM-dd'T'HH:mm"));
+  const [entryDate, setEntryDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [editingTx, setEditingTx] = useState(null); // holds a copy of tx being edited
 
@@ -186,11 +186,11 @@ export default function CustomerDetail() {
               required
             />
             <input
-              type="datetime-local"
+              type="date"
               className="form-control"
               value={entryDate}
               onChange={(e) => setEntryDate(e.target.value)}
-              style={{ flex: 1, minWidth: '150px' }}
+              style={{ flex: 1, minWidth: '130px' }}
               required
             />
             <button type="submit" className="btn btn-primary" style={{ width: 'auto', background: 'var(--danger)' }} disabled={isSubmitting}>
@@ -213,11 +213,11 @@ export default function CustomerDetail() {
               min="1"
             />
             <input
-              type="datetime-local"
+              type="date"
               className="form-control"
               value={entryDate}
               onChange={(e) => setEntryDate(e.target.value)}
-              style={{ flex: 1, minWidth: '150px' }}
+              style={{ flex: 1, minWidth: '130px' }}
               required
             />
             <button type="submit" className="btn btn-primary" style={{ width: 'auto', background: 'var(--success)' }} disabled={isSubmitting}>
