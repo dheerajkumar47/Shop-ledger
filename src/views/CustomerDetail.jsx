@@ -167,6 +167,16 @@ export default function CustomerDetail() {
           <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.5rem' }}>Give Udhar (Add Item)</h3>
           <form onSubmit={handleAddDebit} style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
             <input 
+              type="number" 
+              className="form-control" 
+              placeholder="Amount (Rs)" 
+              value={debitAmount}
+              onChange={(e) => setDebitAmount(e.target.value)}
+              style={{ flex: 1, minWidth: '100px' }}
+              required
+              min="1"
+            />
+            <input 
               type="text" 
               className="form-control" 
               placeholder="Item Details..." 
@@ -174,16 +184,6 @@ export default function CustomerDetail() {
               onChange={(e) => setDebitItem(e.target.value)}
               style={{ flex: 2, minWidth: '150px' }}
               required
-            />
-            <input 
-              type="number" 
-              className="form-control" 
-              placeholder="Amount..." 
-              value={debitAmount}
-              onChange={(e) => setDebitAmount(e.target.value)}
-              style={{ flex: 1, minWidth: '100px' }}
-              required
-              min="1"
             />
             <input
               type="datetime-local"
@@ -296,7 +296,7 @@ export default function CustomerDetail() {
                 <div style={{ display: 'flex', alignItems: 'center' }}>
                   <div className="tx-details" style={{ flex: 1 }}>
                     <h4>{tx.itemName}</h4>
-                    <p>{format(new Date(tx.date), 'dd MMM yyyy, h:mm a')}</p>
+                    <p>{format(new Date(tx.date), 'dd MMM yyyy')}</p>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                     <div className="tx-amount" style={{ color: tx.type === 'credit' ? 'var(--success)' : 'var(--danger)' }}>

@@ -81,51 +81,51 @@ export default function Statements() {
     doc.setFont("helvetica");
 
     // Header
-    doc.setFontSize(20);
-    doc.setFontSize(20);
-    doc.text(`Shop Ledger Statement${selectedCustomer ? ` for ${selectedCustomer}` : ''}`, 14, 22);
-    
-    doc.setFontSize(11);
-    doc.text(`Period: ${format(parseISO(startDate), 'dd MMM yyyy')} to ${format(parseISO(endDate), 'dd MMM yyyy')}`, 14, 30);
-    doc.text(`Generated on: ${format(new Date(), 'dd MMM yyyy, h:mm a')}`, 14, 36);
-    
-    // Summary
-    doc.setFontSize(12);
-    doc.text(`Summary:`, 14, 46);
+    doc.setFontSize(18);
+    doc.text(`Shop Ledger Statement${selectedCustomer ? ` — ${selectedCustomer}` : ''}`, 14, 22);
     doc.setFontSize(10);
-    doc.text(`Previous Pending Balance: Rs ${reportData.prevBalance.toFixed(2)}`, 14, 52);
-    doc.text(`Period Udhar Taken: Rs ${reportData.periodDebit.toFixed(2)}`, 14, 58);
-    doc.text(`Period Payments Received: Rs ${reportData.periodCredit.toFixed(2)}`, 14, 64);
-    
-    const finalBalance = reportData.prevBalance + reportData.periodDebit - reportData.periodCredit;
-    doc.text(`Total Final Pending: Rs ${finalBalance.toFixed(2)}`, 14, 70);
+    doc.text(`Period: ${format(parseISO(startDate), 'dd MMM yyyy')} to ${format(parseISO(endDate), 'dd MMM yyyy')}`, 14, 30);
+    doc.text(`Generated: ${format(new Date(), 'dd MMM yyyy')}`, 14, 36);
 
-    // Sort ascending for chronological statement
-    const chronological = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
-
-    const tableColumn = ["Date", "Customer", "Items", "Debit (Udhar)", "Credit (Payment)"];
-    const tableRows = [];
-
-    chronological.forEach(tx => {
-      const txData = [
-        format(new Date(tx.date), 'dd/MM/yyyy h:mm a'),
-        tx.storeName,
-        tx.itemName,
-        tx.type === 'debit' ? `Rs ${tx.amount}` : '-',
-        tx.type === 'credit' ? `Rs ${tx.amount}` : '-'
-      ];
-      tableRows.push(txData);
+    // Group by customer
+    const grouped = {};
+    transactions.forEach(tx => {
+      if (!grouped[tx.storeName]) grouped[tx.storeName] = { debit: 0, credit: 0 };
+      if (tx.type === 'debit') grouped[tx.storeName].debit += Number(tx.amount);
+      else grouped[tx.storeName].credit += Number(tx.amount);
     });
+
+    const tableColumn = ['Customer', 'Total Udhar (Rs)', 'Total Paid (Rs)', 'Net Pending (Rs)'];
+    const tableRows = Object.entries(grouped)
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([name, d]) => [
+        name,
+        d.debit.toFixed(2),
+        d.credit.toFixed(2),
+        (d.debit - d.credit).toFixed(2)
+      ]);
+
+    // Totals row
+    const grandDebit  = Object.values(grouped).reduce((s, d) => s + d.debit, 0);
+    const grandCredit = Object.values(grouped).reduce((s, d) => s + d.credit, 0);
+    tableRows.push(['TOTAL', grandDebit.toFixed(2), grandCredit.toFixed(2), (grandDebit - grandCredit).toFixed(2)]);
 
     autoTable(doc, {
       head: [tableColumn],
       body: tableRows,
-      startY: 76,
-      styles: { fontSize: 9 },
-      headStyles: { fillColor: [79, 70, 229] }
+      startY: 42,
+      styles: { fontSize: 10 },
+      headStyles: { fillColor: [79, 70, 229] },
+      foot: [],
+      didParseCell: (data) => {
+        // Bold the totals row
+        if (data.row.index === tableRows.length - 1) {
+          data.cell.styles.fontStyle = 'bold';
+        }
+      }
     });
 
-    doc.save(`Statement_${selectedCustomer || 'Global'}_${format(parseISO(startDate), 'yyyyMMdd')}_to_${format(parseISO(endDate), 'yyyyMMdd')}.pdf`);
+    doc.save(`Statement_${selectedCustomer || 'All'}_${format(parseISO(startDate), 'yyyyMMdd')}.pdf`);
   };
 
   const finalBalance = reportData.prevBalance + reportData.periodDebit - reportData.periodCredit;

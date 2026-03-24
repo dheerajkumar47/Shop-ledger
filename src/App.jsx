@@ -14,9 +14,22 @@ import Profile from './views/Profile';
 import Settings from './views/Settings';
 
 const Header = ({ shopName }) => {
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        window.history.back();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   return (
     <header className="header" style={{ padding: '1rem 2rem' }}>
-      <h1>{shopName}</h1>
+      <Link to="/" style={{ textDecoration: 'none' }}>
+        <h1 style={{ cursor: 'pointer' }}>{shopName}</h1>
+      </Link>
       <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', color: 'var(--text-muted)' }}>
         <Link to="/profile" style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.25rem', color: 'inherit', textDecoration: 'none' }}>
           <UserCircle size={24} />
