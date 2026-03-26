@@ -2,14 +2,12 @@ import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { getAllTransactions, getCustomers } from '../services/db';
 import { format, isToday } from 'date-fns';
-import { Users, Truck, Search, FileText, ArrowRight, ChevronRight, ChevronDown, BookOpen } from 'lucide-react';
+import { Users, Truck, FileText, ArrowRight, ChevronRight, BookOpen } from 'lucide-react';
 
 export default function Dashboard() {
   const [todayTransactions, setTodayTransactions] = useState([]);
   const [allTransactions, setAllTransactions] = useState([]);
   const [customers, setCustomers] = useState([]);
-  const [searchQuery, setSearchQuery] = useState('');
-
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -18,24 +16,11 @@ export default function Dashboard() {
       setAllTransactions(allTx);
       const todayTx = allTx.filter(tx => isToday(new Date(tx.date)));
       setTodayTransactions(todayTx.reverse());
-
       const allC = await getCustomers();
       setCustomers(allC);
     };
     fetchInitialData();
   }, []);
-
-  const handleSearch = (e) => {
-    e.preventDefault();
-    if (searchQuery.trim()) {
-      const exists = customers.find(c => c.name.toLowerCase() === searchQuery.trim().toLowerCase());
-      if (exists) {
-        navigate(`/customer/${encodeURIComponent(exists.name)}`);
-      } else {
-        alert("Customer not found. Please add them via 'Add New Customer' first.");
-      }
-    }
-  };
 
   // Udhar stats
   const dailyUdhar = todayTransactions
@@ -69,27 +54,6 @@ export default function Dashboard() {
       {/* ── LEFT SIDEBAR ─────────────────────────────────────── */}
       <aside style={{ display: 'flex', flexDirection: 'column', gap: '1rem', position: 'sticky', top: '1.5rem' }}>
 
-        {/* Quick Search */}
-        <div className="glass-card" style={{ padding: '1.25rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
-            <Search size={18} color="var(--primary)" />
-            <h3 style={{ fontWeight: 600, fontSize: '0.95rem', margin: 0 }}>Search Customer</h3>
-          </div>
-          <form onSubmit={handleSearch} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            <input
-              type="text"
-              list="customer-list"
-              className="form-control"
-              placeholder="Customer name..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-            />
-            <datalist id="customer-list">
-              {customers.map(c => <option key={c.name} value={c.name} />)}
-            </datalist>
-            <button type="submit" className="btn btn-primary" style={{ padding: '0.6rem' }}>Open Ledger →</button>
-          </form>
-        </div>
 
         {/* Actions */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
