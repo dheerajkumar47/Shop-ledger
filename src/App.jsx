@@ -12,6 +12,7 @@ import AddParty from './views/AddParty';
 import Login from './views/Login';
 import Profile from './views/Profile';
 import Settings from './views/Settings';
+import CustomerDirectory from './views/CustomerDirectory';
 
 const Header = ({ shopName }) => {
   useEffect(() => {
@@ -74,6 +75,7 @@ function App() {
             <Route path="/add-party" element={<AddParty />} />
             <Route path="/statements" element={<Statements />} />
             <Route path="/customer/:name" element={<CustomerDetail />} />
+            <Route path="/customer-directory" element={<CustomerDirectory />} />
             <Route path="/profile" element={<Profile onLogout={() => setIsAuthenticated(false)} onProfileUpdate={setShopName} />} />
             <Route path="/settings" element={<Settings />} />
           </Routes>

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { getAllTransactions, getCustomers } from '../services/db';
 import { format, isToday } from 'date-fns';
-import { Users, Truck, Search, FileText, ArrowRight, ChevronRight } from 'lucide-react';
+import { Users, Truck, Search, FileText, ArrowRight, ChevronRight, ChevronDown, BookOpen } from 'lucide-react';
 
 export default function Dashboard() {
   const [todayTransactions, setTodayTransactions] = useState([]);
@@ -94,9 +94,10 @@ export default function Dashboard() {
         {/* Actions */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
           <p style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0.25rem' }}>Quick Actions</p>
-          {actionCard('/add-customer', <Users size={20} color="var(--primary)" />, 'Add New Customer', 'var(--primary)')}
-          {actionCard('/add-party',    <Truck size={20} color="#8b5cf6" />,         'Add New Party',     '#8b5cf6')}
-          {actionCard('/statements',   <FileText size={20} color="#0ea5e9" />,       'View Statements',   '#0ea5e9')}
+          {actionCard('/add-customer',       <Users    size={20} color="var(--primary)" />, 'Add New Customer',    'var(--primary)')}
+          {actionCard('/add-party',          <Truck    size={20} color="#8b5cf6" />,        'Add New Party',        '#8b5cf6')}
+          {actionCard('/statements',         <FileText size={20} color="#0ea5e9" />,        'View Statements',      '#0ea5e9')}
+          {actionCard('/customer-directory', <BookOpen size={20} color="#10b981" />,        'Customer Directory',   '#10b981')}
         </div>
 
         {/* Registered Customers */}
@@ -180,41 +181,6 @@ export default function Dashboard() {
                   + {todayTransactions.length - 8} more entries
                 </Link>
               )}
-            </div>
-          )}
-        </div>
-
-        {/* Customer Directory */}
-        <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-            <p style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: 0 }}>Customer Directory ({customers.length})</p>
-            <Link to="/add-customer" style={{ fontSize: '0.8rem', color: 'var(--primary)', textDecoration: 'none', fontWeight: 500 }}>+ Add New →</Link>
-          </div>
-          {customers.length === 0 ? (
-            <div className="glass-card" style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-              <p style={{ margin: 0 }}>No customers yet. Add your first customer.</p>
-            </div>
-          ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '0.75rem' }}>
-              {customers.map(c => (
-                <div
-                  key={c.name}
-                  className="glass-card"
-                  onClick={() => navigate(`/customer/${encodeURIComponent(c.name)}`)}
-                  style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', padding: '1rem', cursor: 'pointer', transition: 'transform 0.15s, box-shadow 0.15s' }}
-                  onMouseOver={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(79,70,229,0.12)'; }}
-                  onMouseOut={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = ''; }}
-                >
-                  <div style={{ width: 42, height: 42, borderRadius: '50%', background: 'rgba(79,70,229,0.12)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '1rem', flexShrink: 0 }}>
-                    {c.name.charAt(0).toUpperCase()}
-                  </div>
-                  <div style={{ minWidth: 0 }}>
-                    <p style={{ margin: 0, fontWeight: 600, fontSize: '0.9rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.name}</p>
-                    {c.mobile  && <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-muted)' }}>📞 {c.mobile}</p>}
-                    {c.address && <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>📍 {c.address}</p>}
-                  </div>
-                </div>
-              ))}
             </div>
           )}
         </div>
