@@ -144,6 +144,20 @@ export const deleteCustomer = async (name) => {
   return await db.delete('customers', name);
 };
 
+export const updateCustomerInfo = async (oldName, newData) => {
+  const db = await initDB();
+  // Delete old record, save new one
+  await db.delete('customers', oldName);
+  await db.put('customers', newData);
+  // If name changed, migrate all transactions to new name
+  if (oldName !== newData.name) {
+    const all = await db.getAllFromIndex(STORE_NAME, 'storeName', oldName);
+    for (const tx of all) {
+      await db.put(STORE_NAME, { ...tx, storeName: newData.name });
+    }
+  }
+};
+
 
 // Party Operations
 export const addParty = async (party) => {

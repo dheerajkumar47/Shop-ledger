@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getTransactionsByCustomer, addTransaction, deleteTransaction, updateTransaction, deleteCustomer, getCustomers } from '../services/db';
+import { getTransactionsByCustomer, addTransaction, deleteTransaction, updateTransaction, deleteCustomer, getCustomers, updateCustomerInfo } from '../services/db';
 import { format, parseISO, startOfDay, endOfDay, isBefore } from 'date-fns';
 import { Download, Trash2, Plus, Minus, ArrowLeft, Pencil, Check, X, UserX } from 'lucide-react';
 import jsPDF from 'jspdf';
@@ -20,6 +20,10 @@ export default function CustomerDetail() {
   const [entryDate, setEntryDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [editingTx, setEditingTx] = useState(null);
+  const [editingCustomer, setEditingCustomer] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editMobile, setEditMobile] = useState('');
+  const [editAddress, setEditAddress] = useState('');
 
   useEffect(() => {
     loadTransactions();
@@ -76,6 +80,25 @@ export default function CustomerDetail() {
     if (window.confirm(`Delete customer "${name}" and ALL their records? This cannot be undone.`)) {
       await deleteCustomer(name);
       navigate('/');
+    }
+  };
+
+  const handleEditCustomer = () => {
+    setEditName(customerInfo?.name || name);
+    setEditMobile(customerInfo?.mobile || '');
+    setEditAddress(customerInfo?.address || '');
+    setEditingCustomer(true);
+  };
+
+  const handleCustomerSave = async () => {
+    const newName = editName.trim();
+    if (!newName) return;
+    await updateCustomerInfo(name, { name: newName, mobile: editMobile.trim(), address: editAddress.trim() });
+    setEditingCustomer(false);
+    if (newName !== name) {
+      navigate(`/customer/${encodeURIComponent(newName)}`, { replace: true });
+    } else {
+      loadCustomerInfo();
     }
   };
 
@@ -157,22 +180,46 @@ export default function CustomerDetail() {
     <div className="customer-detail-container">
 
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
-        <button onClick={() => navigate(-1)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.5rem' }}>
-          <ArrowLeft size={24} color="var(--text-main)" />
-        </button>
-        <div style={{ flex: 1 }}>
-          <h2 style={{ fontSize: '1.25rem', fontWeight: 600, margin: 0 }}>{name}</h2>
-          {customerInfo?.mobile  && <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-muted)' }}>📞 {customerInfo.mobile}</p>}
-          {customerInfo?.address && <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-muted)' }}>📍 {customerInfo.address}</p>}
+      {editingCustomer ? (
+        // ── Edit Customer Mode ──
+        <div className="glass-card" style={{ padding: '1rem', marginBottom: '1rem' }}>
+          <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.75rem' }}>Edit Customer Info</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            <input type="text" className="form-control" placeholder="Customer Name" value={editName} onChange={e => setEditName(e.target.value)} />
+            <input type="text" className="form-control" placeholder="Mobile Number (Optional)" value={editMobile} onChange={e => setEditMobile(e.target.value)} />
+            <input type="text" className="form-control" placeholder="Address (Optional)" value={editAddress} onChange={e => setEditAddress(e.target.value)} />
+            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem' }}>
+              <button onClick={handleCustomerSave} className="btn btn-primary" style={{ width: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Check size={16} /> Save Changes
+              </button>
+              <button onClick={() => setEditingCustomer(false)} style={{ background: 'rgba(0,0,0,0.06)', border: 'none', borderRadius: 8, padding: '0.5rem 1rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <X size={16} /> Cancel
+              </button>
+            </div>
+          </div>
         </div>
-        <button onClick={generatePDF} className="btn btn-primary" style={{ width: 'auto', padding: '0.5rem 1rem' }}>
-          <Download size={18} /> PDF
-        </button>
-        <button onClick={handleDeleteCustomer} className="btn" style={{ width: 'auto', padding: '0.5rem 1rem', background: 'rgba(239,68,68,0.1)', color: 'var(--danger)', border: '1px solid rgba(239,68,68,0.3)' }}>
-          <UserX size={18} />
-        </button>
-      </div>
+      ) : (
+        // ── View Mode ──
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
+          <button onClick={() => navigate(-1)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.5rem' }}>
+            <ArrowLeft size={24} color="var(--text-main)" />
+          </button>
+          <div style={{ flex: 1 }}>
+            <h2 style={{ fontSize: '1.25rem', fontWeight: 600, margin: 0 }}>{name}</h2>
+            {customerInfo?.mobile  && <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-muted)' }}>📞 {customerInfo.mobile}</p>}
+            {customerInfo?.address && <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-muted)' }}>📍 {customerInfo.address}</p>}
+          </div>
+          <button onClick={handleEditCustomer} className="btn" style={{ width: 'auto', padding: '0.5rem 1rem', background: 'rgba(79,70,229,0.1)', color: 'var(--primary)', border: '1px solid rgba(79,70,229,0.3)' }} title="Edit Customer">
+            <Pencil size={16} />
+          </button>
+          <button onClick={generatePDF} className="btn btn-primary" style={{ width: 'auto', padding: '0.5rem 1rem' }}>
+            <Download size={18} /> PDF
+          </button>
+          <button onClick={handleDeleteCustomer} className="btn" style={{ width: 'auto', padding: '0.5rem 1rem', background: 'rgba(239,68,68,0.1)', color: 'var(--danger)', border: '1px solid rgba(239,68,68,0.3)' }} title="Delete Customer">
+            <UserX size={18} />
+          </button>
+        </div>
+      )}
 
       {/* Balance card */}
       <div className="stats-grid" style={{ gridTemplateColumns: '1fr', marginBottom: '1rem' }}>
