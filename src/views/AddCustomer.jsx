@@ -6,15 +6,15 @@ import { ArrowLeft } from 'lucide-react';
 export default function AddCustomer() {
   const [name, setName] = useState('');
   const [mobile, setMobile] = useState('');
+  const [address, setAddress] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!name.trim()) return;
-    
     setIsSubmitting(true);
-    await addCustomer({ name: name.trim(), mobile: mobile.trim() });
+    await addCustomer({ name: name.trim(), mobile: mobile.trim(), address: address.trim() });
     setIsSubmitting(false);
     navigate('/');
   };
@@ -27,34 +27,24 @@ export default function AddCustomer() {
         </button>
         <h2 style={{ fontSize: '1.25rem', fontWeight: 600, flex: 1 }}>Add New Customer</h2>
       </div>
-      
+
       <div className="glass-card">
         <form onSubmit={handleSubmit}>
           <div className="form-group">
             <label htmlFor="name">Customer Name</label>
-            <input 
-              type="text" 
-              id="name" 
-              className="form-control" 
-              placeholder="E.g. Ali"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-            />
+            <input type="text" id="name" className="form-control" placeholder="E.g. Ali" value={name} onChange={(e) => setName(e.target.value)} required />
           </div>
-          
+
           <div className="form-group">
             <label htmlFor="mobile">Mobile Number (Optional)</label>
-            <input 
-              type="text" 
-              id="mobile" 
-              className="form-control" 
-              placeholder="E.g. 0300-1234567"
-              value={mobile}
-              onChange={(e) => setMobile(e.target.value)}
-            />
+            <input type="text" id="mobile" className="form-control" placeholder="E.g. 0300-1234567" value={mobile} onChange={(e) => setMobile(e.target.value)} />
           </div>
-          
+
+          <div className="form-group">
+            <label htmlFor="address">Address (Optional)</label>
+            <input type="text" id="address" className="form-control" placeholder="E.g. House 12, Street 4, Lahore" value={address} onChange={(e) => setAddress(e.target.value)} />
+          </div>
+
           <button type="submit" className="btn btn-primary mt-4" disabled={isSubmitting}>
             {isSubmitting ? 'Saving...' : 'Save Customer'}
           </button>

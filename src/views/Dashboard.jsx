@@ -117,7 +117,8 @@ export default function Dashboard() {
                   </div>
                   <div style={{ minWidth: 0 }}>
                     <p style={{ margin: 0, fontWeight: 600, fontSize: '0.875rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.name}</p>
-                    {c.mobile && <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-muted)' }}>{c.mobile}</p>}
+                    {c.mobile  && <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-muted)' }}>📞 {c.mobile}</p>}
+                    {c.address && <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--text-muted)' }}>📍 {c.address}</p>}
                   </div>
                   <ArrowRight size={14} color="var(--text-muted)" style={{ marginLeft: 'auto', flexShrink: 0 }} />
                 </div>

@@ -139,6 +139,12 @@ export const getCustomers = async () => {
   return await db.getAll('customers');
 };
 
+export const deleteCustomer = async (name) => {
+  const db = await initDB();
+  return await db.delete('customers', name);
+};
+
+
 // Party Operations
 export const addParty = async (party) => {
   const db = await initDB();
