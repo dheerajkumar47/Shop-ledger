@@ -137,22 +137,32 @@ export default function CustomerDetail() {
     if (customerInfo?.mobile)  doc.text(`Mobile: ${customerInfo.mobile}`, 14, 45);
     if (customerInfo?.address) doc.text(`Address: ${customerInfo.address}`, 14, 51);
 
-    const startY = customerInfo?.address ? 57 : customerInfo?.mobile ? 51 : 45;
+    const startY = (customerInfo?.address ? 57 : customerInfo?.mobile ? 51 : 45) + 9;
 
     // Previous balance row + period entries
     const chronological = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
     const tableRows = [];
 
     if (prevBalance !== 0) {
-      tableRows.push([`Before ${format(parseISO(startDate), 'dd MMM yyyy')}`, 'Previous Balance', prevBalance > 0 ? `Rs ${prevBalance.toFixed(2)}` : '-', prevBalance < 0 ? `Rs ${Math.abs(prevBalance).toFixed(2)}` : '-']);
+      tableRows.push([
+        `Before ${format(parseISO(startDate), 'dd MMM yyyy')}`,
+        'Previous Balance',
+        prevBalance > 0 ? `Rs ${prevBalance.toFixed(2)}` : '-',
+        prevBalance < 0 ? `Rs ${Math.abs(prevBalance).toFixed(2)}` : '-',
+        `Rs ${prevBalance.toFixed(2)}`,
+      ]);
     }
 
+    let runningBalance = prevBalance;
     chronological.forEach(tx => {
+      if (tx.type === 'debit')  runningBalance += Number(tx.amount);
+      else                      runningBalance -= Number(tx.amount);
       tableRows.push([
         format(new Date(tx.date), 'dd MMM yyyy'),
         tx.itemName,
         tx.type === 'debit'  ? `Rs ${tx.amount}` : '-',
         tx.type === 'credit' ? `Rs ${tx.amount}` : '-',
+        `Rs ${runningBalance.toFixed(2)}`,
       ]);
     });
 
@@ -160,14 +170,26 @@ export default function CustomerDetail() {
     const periodDebit  = chronological.filter(t => t.type === 'debit').reduce((s, t) => s + Number(t.amount), 0);
     const periodCredit = chronological.filter(t => t.type === 'credit').reduce((s, t) => s + Number(t.amount), 0);
     const finalNet = prevBalance + periodDebit - periodCredit;
-    tableRows.push(['', 'NET PENDING', `Rs ${finalNet > 0 ? finalNet.toFixed(2) : '0.00'}`, finalNet < 0 ? `Overpaid Rs ${Math.abs(finalNet).toFixed(2)}` : '']);
+    tableRows.push(['', 'NET PENDING', '', '', `Rs ${finalNet.toFixed(2)}`]);
+
+    // Bold "Total Due" summary line above the table
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    const dueLabel = finalNet > 0
+      ? `Total Due: Rs ${finalNet.toFixed(2)}`
+      : finalNet < 0
+        ? `Overpaid: Rs ${Math.abs(finalNet).toFixed(2)}`
+        : 'Total Due: Clear (Rs 0.00)';
+    doc.text(dueLabel, 14, startY - 4);
+    doc.setFont('helvetica', 'normal');
 
     autoTable(doc, {
-      head: [['Date', 'Details', 'Debit (Udhar)', 'Credit (Payment)']],
+      head: [['Date', 'Details', 'Debit (Udhar)', 'Credit (Payment)', 'Balance']],
       body: tableRows,
       startY,
       styles: { fontSize: 9 },
       headStyles: { fillColor: [79, 70, 229] },
+      columnStyles: { 4: { fontStyle: 'bold' } },
       didParseCell: (data) => {
         if (data.row.index === tableRows.length - 1) data.cell.styles.fontStyle = 'bold';
       }
