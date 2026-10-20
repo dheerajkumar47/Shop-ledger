@@ -13,6 +13,7 @@ import Login from './views/Login';
 import Profile from './views/Profile';
 import Settings from './views/Settings';
 import CustomerDirectory from './views/CustomerDirectory';
+import ImportExcel from './views/ImportExcel';
 
 /* ─── Global Header ─────────────────────────────────────────── */
 function Header({ shopName, customers }) {
@@ -138,6 +139,7 @@ function App() {
             <Route path="/customer-directory" element={<CustomerDirectory />} />
             <Route path="/profile" element={<Profile onLogout={() => setIsAuthenticated(false)} onProfileUpdate={setShopName} />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/import-excel" element={<ImportExcel />} />
           </Routes>
         </main>
       </div>

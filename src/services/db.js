@@ -225,3 +225,68 @@ export const importAllData = async (backup) => {
     await db.add('gala', rest);
   }
 };
+
+// ── Daily Excel Import ──────────────────────────────────────────────────────
+// Each imported row carries an `importKey` (date|name|detail|amount|type).
+// Re-uploading the same (growing) sheet only adds rows whose key occurs more
+// times in the sheet than it already does in the ledger.
+
+export const planSheetImport = async (rows) => {
+  const db = await initDB();
+  const allTx = await db.getAll(STORE_NAME);
+  const customers = await db.getAll('customers');
+
+  const existingCount = {};
+  for (const tx of allTx) {
+    if (tx.importKey) existingCount[tx.importKey] = (existingCount[tx.importKey] || 0) + 1;
+  }
+
+  // Map lowercase name -> canonical name already used in the app
+  const knownNames = {};
+  for (const c of customers) knownNames[c.name.toLowerCase()] = c.name;
+  for (const tx of allTx) if (tx.storeName && !knownNames[tx.storeName.toLowerCase()]) knownNames[tx.storeName.toLowerCase()] = tx.storeName;
+  const customerSet = new Set(customers.map(c => c.name.toLowerCase()));
+
+  const seenCount = {};
+  const toAdd = [];
+  let skipped = 0;
+  const newCustomers = [];
+
+  for (const row of rows) {
+    const lower = row.name.toLowerCase();
+    if (!knownNames[lower]) knownNames[lower] = row.name;
+    const name = knownNames[lower];
+    if (!customerSet.has(lower)) {
+      customerSet.add(lower);
+      newCustomers.push(name);
+    }
+
+    const key = [row.ymd, lower, row.detail.toLowerCase(), row.amount, row.type].join('|');
+    seenCount[key] = (seenCount[key] || 0) + 1;
+    if (seenCount[key] <= (existingCount[key] || 0)) { skipped++; continue; }
+    toAdd.push({ ...row, name, importKey: key });
+  }
+
+  return { toAdd, skipped, newCustomers };
+};
+
+export const applySheetImport = async ({ toAdd, newCustomers }) => {
+  const db = await initDB();
+  for (const name of newCustomers) {
+    const existing = await db.get('customers', name);
+    if (!existing) await db.put('customers', { name, mobile: '', address: '' });
+  }
+  for (const row of toAdd) {
+    const [y, m, d] = row.ymd.split('-').map(Number);
+    // Local noon + row offset keeps the date stable across timezones and preserves sheet order
+    const date = new Date(y, m - 1, d, 12, 0, row.rowIndex % 3600);
+    await db.add(STORE_NAME, {
+      storeName: row.name,
+      itemName: row.detail || (row.type === 'credit' ? 'Payment Received' : 'Udhar'),
+      amount: row.amount,
+      type: row.type,
+      date: date.toISOString(),
+      importKey: row.importKey,
+    });
+  }
+};
