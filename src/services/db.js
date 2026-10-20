@@ -227,9 +227,20 @@ export const importAllData = async (backup) => {
 };
 
 // ── Daily Excel Import ──────────────────────────────────────────────────────
-// Each imported row carries an `importKey` (date|name|detail|amount|type).
-// Re-uploading the same (growing) sheet only adds rows whose key occurs more
-// times in the sheet than it already does in the ledger.
+// A row's key is date|name|detail|amount|type (payments ignore detail, since
+// manual payments are saved as "Payment Received"). Re-uploading the same
+// growing sheet only adds rows whose key occurs more times in the sheet than
+// it already does in the ledger — counting entries typed in by hand too.
+
+const pad2 = (n) => String(n).padStart(2, '0');
+
+const localYmd = (iso) => {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+};
+
+export const makeImportKey = (ymd, name, detail, amount, type) =>
+  [ymd, name.toLowerCase(), type === 'credit' ? '' : detail.toLowerCase(), Number(amount), type].join('|');
 
 export const planSheetImport = async (rows) => {
   const db = await initDB();
@@ -238,7 +249,8 @@ export const planSheetImport = async (rows) => {
 
   const existingCount = {};
   for (const tx of allTx) {
-    if (tx.importKey) existingCount[tx.importKey] = (existingCount[tx.importKey] || 0) + 1;
+    const key = tx.importKey || makeImportKey(localYmd(tx.date), (tx.storeName || '').trim().replace(/\s+/g, ' '), (tx.itemName || '').trim().replace(/\s+/g, ' '), tx.amount, tx.type);
+    existingCount[key] = (existingCount[key] || 0) + 1;
   }
 
   // Map lowercase name -> canonical name already used in the app
@@ -256,25 +268,27 @@ export const planSheetImport = async (rows) => {
     const lower = row.name.toLowerCase();
     if (!knownNames[lower]) knownNames[lower] = row.name;
     const name = knownNames[lower];
+
+    const key = makeImportKey(row.ymd, lower, row.detail, row.amount, row.type);
+    seenCount[key] = (seenCount[key] || 0) + 1;
+    if (seenCount[key] <= (existingCount[key] || 0)) { skipped++; continue; }
+    toAdd.push({ ...row, name, importKey: key });
+
     if (!customerSet.has(lower)) {
       customerSet.add(lower);
       newCustomers.push(name);
     }
-
-    const key = [row.ymd, lower, row.detail.toLowerCase(), row.amount, row.type].join('|');
-    seenCount[key] = (seenCount[key] || 0) + 1;
-    if (seenCount[key] <= (existingCount[key] || 0)) { skipped++; continue; }
-    toAdd.push({ ...row, name, importKey: key });
   }
 
   return { toAdd, skipped, newCustomers };
 };
 
-export const applySheetImport = async ({ toAdd, newCustomers }) => {
+export const applySheetImport = async ({ toAdd, newCustomers }, fileName = '') => {
   const db = await initDB();
+  const batchId = Date.now();
   for (const name of newCustomers) {
     const existing = await db.get('customers', name);
-    if (!existing) await db.put('customers', { name, mobile: '', address: '' });
+    if (!existing) await db.put('customers', { name, mobile: '', address: '', createdByImport: batchId });
   }
   for (const row of toAdd) {
     const [y, m, d] = row.ymd.split('-').map(Number);
@@ -287,6 +301,51 @@ export const applySheetImport = async ({ toAdd, newCustomers }) => {
       type: row.type,
       date: date.toISOString(),
       importKey: row.importKey,
+      importBatch: batchId,
+      importFile: fileName,
     });
+  }
+  return batchId;
+};
+
+// Uploads still in the ledger, newest first
+export const getImportBatches = async () => {
+  const db = await initDB();
+  const allTx = await db.getAll(STORE_NAME);
+  const batches = {};
+  for (const tx of allTx) {
+    if (!tx.importBatch) continue;
+    const b = batches[tx.importBatch] ??= { id: tx.importBatch, fileName: tx.importFile || '', entries: [], debit: 0, credit: 0 };
+    b.entries.push(tx);
+    b[tx.type] += Number(tx.amount);
+  }
+  return Object.values(batches)
+    .map(b => ({ ...b, entries: b.entries.sort((a, c) => a.date.localeCompare(c.date)) }))
+    .sort((a, b) => b.id - a.id);
+};
+
+// Removes every entry of an upload, and customers that upload created if they have nothing left
+export const undoImportBatch = async (batchId) => {
+  const db = await initDB();
+  const allTx = await db.getAll(STORE_NAME);
+  for (const tx of allTx) {
+    if (tx.importBatch === batchId) await db.delete(STORE_NAME, tx.id);
+  }
+  await removeEmptyImportedCustomers(batchId);
+};
+
+export const deleteImportedEntry = async (tx) => {
+  const db = await initDB();
+  await db.delete(STORE_NAME, tx.id);
+  await removeEmptyImportedCustomers(tx.importBatch);
+};
+
+const removeEmptyImportedCustomers = async (batchId) => {
+  const db = await initDB();
+  const customers = await db.getAll('customers');
+  for (const c of customers) {
+    if (c.createdByImport !== batchId) continue;
+    const left = await db.getAllFromIndex(STORE_NAME, 'storeName', c.name);
+    if (left.length === 0) await db.delete('customers', c.name);
   }
 };

@@ -1,8 +1,8 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Upload, FileSpreadsheet, CheckCircle, AlertTriangle, Download } from 'lucide-react';
+import { ArrowLeft, Upload, FileSpreadsheet, CheckCircle, AlertTriangle, Download, Undo2, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { planSheetImport, applySheetImport } from '../services/db';
+import { planSheetImport, applySheetImport, getImportBatches, undoImportBatch, deleteImportedEntry } from '../services/db';
 
 const CREDIT_WORDS = /\b(recei?ved?|recieved?|payment|paid|jama)\b/i;
 
@@ -87,6 +87,25 @@ export default function ImportExcel() {
   const [errors, setErrors] = useState([]);
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
+  const [batches, setBatches] = useState([]);
+  const [openBatch, setOpenBatch] = useState(null);
+  const [confirmUndo, setConfirmUndo] = useState(null);
+
+  const loadBatches = () => getImportBatches().then(setBatches);
+  useEffect(() => { loadBatches(); }, []);
+
+  const handleUndo = async (batch) => {
+    await undoImportBatch(batch.id);
+    setConfirmUndo(null);
+    setOpenBatch(null);
+    setStatus(`↩️ Undone: removed ${batch.entries.length} entries from ${batch.fileName || 'that upload'}. Upload the sheet again any time to re-add them.`);
+    loadBatches();
+  };
+
+  const handleDeleteEntry = async (tx) => {
+    await deleteImportedEntry(tx);
+    loadBatches();
+  };
 
   const handleFile = async (e) => {
     const file = e.target.files[0];
@@ -108,7 +127,8 @@ export default function ImportExcel() {
   const handleConfirm = async () => {
     setBusy(true);
     try {
-      await applySheetImport(plan);
+      await applySheetImport(plan, fileName);
+      loadBatches();
       setStatus(`✅ Imported ${plan.toAdd.length} entries${plan.newCustomers.length ? ` and added ${plan.newCustomers.length} new customers` : ''}.`);
       setPlan(null);
     } catch (err) {
@@ -165,7 +185,7 @@ export default function ImportExcel() {
 
       {status && (
         <div className="glass-card mb-4">
-          <p style={{ fontWeight: 500, color: status.startsWith('✅') ? 'var(--success)' : 'var(--danger)' }}>{status}</p>
+          <p style={{ fontWeight: 500, color: status.startsWith('❌') ? 'var(--danger)' : 'var(--success)' }}>{status}</p>
           {status.startsWith('✅') && (
             <button onClick={() => navigate('/customer-directory')} className="btn btn-primary mt-4" style={{ width: 'auto', padding: '0.6rem 1.2rem' }}>
               Open Customer Directory
@@ -234,6 +254,75 @@ export default function ImportExcel() {
               </button>
             </>
           )}
+        </div>
+      )}
+
+      {batches.length > 0 && (
+        <div className="glass-card mb-4">
+          <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.25rem' }}>Recent Uploads</h3>
+          <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
+            Undo removes every entry added by that upload. Open an upload to delete single entries.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            {batches.map(b => {
+              const isOpen = openBatch === b.id;
+              return (
+                <div key={b.id} style={{ border: '1px solid var(--border, #e5e7eb)', borderRadius: 10, overflow: 'hidden' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem', flexWrap: 'wrap' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: '0.9rem', overflowWrap: 'anywhere' }}>{b.fileName || 'Excel upload'}</div>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                        {new Date(b.id).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                        {' · '}{b.entries.length} entries
+                        {' · '}<span style={{ color: 'var(--danger)' }}>Udhar Rs {b.debit.toLocaleString()}</span>
+                        {b.credit > 0 && <>{' · '}<span style={{ color: 'var(--success)' }}>Received Rs {b.credit.toLocaleString()}</span></>}
+                      </div>
+                    </div>
+                    <button onClick={() => setOpenBatch(isOpen ? null : b.id)} className="btn" style={{ width: 'auto', padding: '0.45rem 0.8rem', fontSize: '0.85rem' }}>
+                      {isOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />} Entries
+                    </button>
+                    {confirmUndo === b.id ? (
+                      <>
+                        <button onClick={() => handleUndo(b)} className="btn" style={{ width: 'auto', padding: '0.45rem 0.8rem', fontSize: '0.85rem', background: 'var(--danger)', color: 'white' }}>
+                          Yes, remove {b.entries.length}
+                        </button>
+                        <button onClick={() => setConfirmUndo(null)} className="btn" style={{ width: 'auto', padding: '0.45rem 0.8rem', fontSize: '0.85rem' }}>
+                          Cancel
+                        </button>
+                      </>
+                    ) : (
+                      <button onClick={() => setConfirmUndo(b.id)} className="btn" style={{ width: 'auto', padding: '0.45rem 0.8rem', fontSize: '0.85rem', background: 'rgba(239,68,68,0.1)', color: 'var(--danger)', border: '1px solid rgba(239,68,68,0.3)' }}>
+                        <Undo2 size={16} /> Undo Upload
+                      </button>
+                    )}
+                  </div>
+                  {isOpen && (
+                    <div style={{ overflowX: 'auto', maxHeight: 360, overflowY: 'auto', borderTop: '1px solid var(--border, #e5e7eb)' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                        <tbody>
+                          {b.entries.map(tx => (
+                            <tr key={tx.id} style={{ borderTop: '1px solid var(--border, #e5e7eb)' }}>
+                              <td style={{ padding: '0.45rem 1rem', whiteSpace: 'nowrap' }}>{new Date(tx.date).toLocaleDateString('en-GB')}</td>
+                              <td style={{ padding: '0.45rem 0.6rem' }}>{tx.storeName}</td>
+                              <td style={{ padding: '0.45rem 0.6rem' }}>{tx.itemName}</td>
+                              <td style={{ padding: '0.45rem 0.6rem', textAlign: 'right', fontWeight: 600, whiteSpace: 'nowrap', color: tx.type === 'credit' ? 'var(--success)' : 'var(--danger)' }}>
+                                {tx.type === 'credit' ? '−' : '+'}Rs {tx.amount}
+                              </td>
+                              <td style={{ padding: '0.45rem 1rem 0.45rem 0.3rem', width: 32 }}>
+                                <button onClick={() => handleDeleteEntry(tx)} title="Delete this entry" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
+                                  <Trash2 size={15} color="var(--text-muted)" />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>
