@@ -235,6 +235,9 @@ export const importAllData = async (backup) => {
 //    user can choose to skip; a skipped row is then linked to that entry so
 //    later uploads count it as already added. Anything typed by hand after the
 //    first upload is never matched
+//  - customers whose sheet total is 0 (fully cleared) and who have no entries
+//    in the app yet are held back as `clearedRows`, so they aren't added just
+//    to sit at Rs 0; they come in once the sheet shows a balance again
 
 const pad2 = (n) => String(n).padStart(2, '0');
 
@@ -289,14 +292,33 @@ export const planSheetImport = async (rows) => {
     else toAdd.push(item);
   }
 
-  return { toAdd, manualMatches, skipped, customerNames: customers.map(c => c.name.toLowerCase()) };
+  const sheetNet = {};
+  for (const row of rows) {
+    const lower = row.name.toLowerCase();
+    sheetNet[lower] = (sheetNet[lower] || 0) + (row.type === 'debit' ? row.amount : -row.amount);
+  }
+  const namesInApp = new Set(allTx.map(tx => (tx.storeName || '').toLowerCase()));
+  const isCleared = (r) => !namesInApp.has(r.name.toLowerCase()) && Math.abs(sheetNet[r.name.toLowerCase()]) < 0.005;
+  const clearedRows = toAdd.filter(isCleared);
+  const clearedNames = [...new Set(clearedRows.map(r => r.name))].sort((a, b) => a.localeCompare(b));
+
+  return {
+    toAdd: toAdd.filter(r => !isCleared(r)),
+    manualMatches,
+    clearedRows,
+    clearedNames,
+    skipped,
+    customerNames: customers.map(c => c.name.toLowerCase()),
+  };
 };
 
 // Rows to write (optionally including the hand-typed matches) and the customers they need
-export const finalizePlan = (plan, includeManualMatches) => {
-  const rows = includeManualMatches
-    ? [...plan.toAdd, ...plan.manualMatches].sort((a, b) => a.rowIndex - b.rowIndex)
-    : plan.toAdd;
+export const finalizePlan = (plan, includeManualMatches, includeCleared = false) => {
+  const rows = [
+    ...plan.toAdd,
+    ...(includeManualMatches ? plan.manualMatches : []),
+    ...(includeCleared ? plan.clearedRows : []),
+  ].sort((a, b) => a.rowIndex - b.rowIndex);
   const known = new Set(plan.customerNames);
   const newCustomers = [];
   for (const r of rows) {
@@ -387,4 +409,32 @@ const removeEmptyImportedCustomers = async (batchId) => {
     const left = await db.getAllFromIndex(STORE_NAME, 'storeName', c.name);
     if (left.length === 0) await db.delete('customers', c.name);
   }
+};
+
+// ── Cleared customers ───────────────────────────────────────────────────────
+
+const dueByCustomer = (allTx) => {
+  const due = {};
+  for (const tx of allTx) due[tx.storeName] = (due[tx.storeName] || 0) + (tx.type === 'debit' ? Number(tx.amount) : -Number(tx.amount));
+  return due;
+};
+
+// Customers whose balance is exactly 0, including ones with no entries at all
+export const getClearedCustomers = async () => {
+  const db = await initDB();
+  const [customers, allTx] = await Promise.all([db.getAll('customers'), db.getAll(STORE_NAME)]);
+  const due = dueByCustomer(allTx);
+  return customers.filter(c => Math.abs(due[c.name] || 0) < 0.005).map(c => c.name);
+};
+
+// Deletes those customers together with their (fully settled) entries
+export const removeClearedCustomers = async () => {
+  const db = await initDB();
+  const names = new Set(await getClearedCustomers());
+  const allTx = await db.getAll(STORE_NAME);
+  const t = db.transaction([STORE_NAME, 'customers'], 'readwrite');
+  for (const tx of allTx) if (names.has(tx.storeName)) t.objectStore(STORE_NAME).delete(tx.id);
+  for (const name of names) t.objectStore('customers').delete(name);
+  await t.done;
+  return names.size;
 };

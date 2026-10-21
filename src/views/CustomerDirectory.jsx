@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getCustomers, getAllTransactions } from '../services/db';
-import { ArrowLeft, Search, Pencil, Check, X, Download } from 'lucide-react';
+import { getCustomers, getAllTransactions, removeClearedCustomers } from '../services/db';
+import { ArrowLeft, Search, Pencil, Check, X, Download, UserMinus } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -11,6 +11,8 @@ export default function CustomerDirectory() {
   const [sort, setSort] = useState('az');
   const [search, setSearch] = useState('');
   const [editing, setEditing] = useState(null);
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [clearMsg, setClearMsg] = useState('');
   const navigate = useNavigate();
 
   const load = async () => {
@@ -26,6 +28,16 @@ export default function CustomerDirectory() {
   };
 
   useEffect(() => { load(); }, []);
+
+  // Customers at exactly Rs 0 (fully paid, or a name with no entries)
+  const cleared = customers.filter(c => Math.abs(duemap[c.name] || 0) < 0.005);
+
+  const removeCleared = async () => {
+    const n = await removeClearedCustomers();
+    setConfirmClear(false);
+    setClearMsg(`Removed ${n} cleared customer${n !== 1 ? 's' : ''}.`);
+    load();
+  };
 
   const startEdit = (c, e) => {
     e.stopPropagation();
@@ -116,6 +128,27 @@ export default function CustomerDirectory() {
           + Add Customer
         </button>
       </div>
+
+      {cleared.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '1rem', padding: '0.75rem 1rem', borderRadius: 10, background: 'rgba(100,116,139,0.07)', border: '1px solid rgba(100,116,139,0.25)' }}>
+          <span style={{ flex: 1, minWidth: 220, fontSize: '0.88rem' }}>
+            {confirmClear
+              ? <>Delete <b>{cleared.length}</b> customer{cleared.length !== 1 ? 's' : ''} with Rs 0 due and their old (fully paid) entries? This cannot be undone.</>
+              : <><b>{cleared.length}</b> customer{cleared.length !== 1 ? 's have' : ' has'} Rs 0 due (udhar fully cleared).</>}
+          </span>
+          {confirmClear ? (
+            <>
+              <button onClick={removeCleared} className="btn" style={{ width: 'auto', padding: '0.45rem 0.9rem', fontSize: '0.85rem', background: 'var(--danger)', color: '#fff' }}>Yes, remove {cleared.length}</button>
+              <button onClick={() => setConfirmClear(false)} className="btn" style={{ width: 'auto', padding: '0.45rem 0.9rem', fontSize: '0.85rem' }}>Cancel</button>
+            </>
+          ) : (
+            <button onClick={() => { setConfirmClear(true); setClearMsg(''); }} className="btn" style={{ width: 'auto', padding: '0.45rem 0.9rem', fontSize: '0.85rem', background: 'rgba(239,68,68,0.1)', color: 'var(--danger)', border: '1px solid rgba(239,68,68,0.3)', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <UserMinus size={15} /> Remove cleared customers
+            </button>
+          )}
+        </div>
+      )}
+      {clearMsg && <p style={{ marginBottom: '1rem', fontSize: '0.88rem', fontWeight: 500, color: 'var(--success)' }}>✅ {clearMsg}</p>}
 
       {/* Search + Sort bar */}
       <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.25rem', flexWrap: 'wrap' }}>

@@ -123,6 +123,7 @@ export default function ImportExcel() {
   const fileRef = useRef(null);
   const [fileName, setFileName] = useState('');
   const [plan, setPlan] = useState(null);
+  const [includeCleared, setIncludeCleared] = useState(false);
   const [manualChoice, setManualChoice] = useState(null); // 'add' | 'skip' for rows matching hand-typed entries
   const [errors, setErrors] = useState([]);
   const [status, setStatus] = useState('');
@@ -157,6 +158,7 @@ export default function ImportExcel() {
     setStatus('');
     setPlan(null);
     setManualChoice(null);
+    setIncludeCleared(false);
     setErrors([]);
     setSheetName('');
     setReading(true);
@@ -199,7 +201,7 @@ export default function ImportExcel() {
     XLSX.writeFile(wb, 'daily-udhar-template.xlsx');
   };
 
-  const final = plan ? finalizePlan(plan, manualChoice === 'add') : null;
+  const final = plan ? finalizePlan(plan, manualChoice === 'add', includeCleared) : null;
   const needsChoice = plan && plan.manualMatches.length > 0 && !manualChoice;
   const totals = final ? final.toAdd.reduce((t, r) => { t[r.type] += r.amount; return t; }, { debit: 0, credit: 0 }) : null;
 
@@ -268,9 +270,24 @@ export default function ImportExcel() {
             <span style={{ color: 'var(--success)' }}>Received: <b>Rs {totals.credit.toLocaleString()}</b></span>
           </div>
           {final.newCustomers.length > 0 && (
-            <p style={{ fontSize: '0.875rem', marginBottom: '1rem' }}>
+            <p style={{ fontSize: '0.875rem', marginBottom: '1rem', maxHeight: 96, overflowY: 'auto' }}>
               <b>New customers to add ({final.newCustomers.length}):</b> {final.newCustomers.join(', ')}
             </p>
+          )}
+
+          {plan.clearedNames.length > 0 && (
+            <div style={{ border: '1px solid rgba(100,116,139,0.3)', background: 'rgba(100,116,139,0.06)', borderRadius: 10, padding: '1rem', marginBottom: '1rem' }}>
+              <p style={{ fontWeight: 600, fontSize: '0.9rem', marginBottom: '0.35rem' }}>
+                {plan.clearedNames.length} cleared customer(s) with Rs 0 due {includeCleared ? 'will be added' : 'are not added'} ({plan.clearedRows.length.toLocaleString()} rows)
+              </p>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '0.6rem' }}>
+                Their udhar is fully paid in the sheet. They are added automatically on a later upload if they take udhar again.
+              </p>
+              <p style={{ fontSize: '0.82rem', marginBottom: '0.75rem', maxHeight: 96, overflowY: 'auto' }}>{plan.clearedNames.join(', ')}</p>
+              <button onClick={() => setIncludeCleared(!includeCleared)} className="btn" style={{ width: 'auto', padding: '0.45rem 0.9rem', fontSize: '0.85rem' }}>
+                {includeCleared ? 'Leave them out' : 'Add them anyway'}
+              </button>
+            </div>
           )}
 
           {plan.manualMatches.length > 0 && (
@@ -309,8 +326,8 @@ export default function ImportExcel() {
             </div>
           )}
 
-          {final.toAdd.length === 0 && plan.manualMatches.length === 0 ? (
-            <p style={{ color: 'var(--text-muted)' }}>Nothing new in this sheet — everything is already in the ledger.</p>
+          {final.toAdd.length === 0 && plan.manualMatches.length === 0 && !(plan.clearedNames.length && includeCleared) ? (
+            <p style={{ color: 'var(--text-muted)' }}>Nothing to add from this sheet — everything is already in the ledger or left out above.</p>
           ) : (
             <>
               <div style={{ overflowX: 'auto', maxHeight: 420, overflowY: 'auto', border: '1px solid var(--border, #e5e7eb)', borderRadius: 10 }}>
