@@ -10,6 +10,7 @@ export default function CustomerDirectory() {
   const [duemap, setDuemap] = useState({});   // { name: netPending }
   const [sort, setSort] = useState('az');
   const [search, setSearch] = useState('');
+  const [dueFilter, setDueFilter] = useState('all'); // 'all' | 'due' (non-zero) | 'zero'
   const [editing, setEditing] = useState(null);
   const [confirmClear, setConfirmClear] = useState(false);
   const [clearMsg, setClearMsg] = useState('');
@@ -57,6 +58,10 @@ export default function CustomerDirectory() {
 
   const sorted = [...customers]
     .sort((a, b) => sort === 'az' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name))
+    .filter(c => {
+      const isZero = Math.abs(duemap[c.name] || 0) < 0.005;
+      return dueFilter === 'all' || (dueFilter === 'due' ? !isZero : isZero);
+    })
     .filter(c =>
       !search.trim() ||
       c.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -157,6 +162,13 @@ export default function CustomerDirectory() {
           <input type="text" className="form-control" placeholder="Search by name, number or address..." value={search} onChange={e => setSearch(e.target.value)} style={{ paddingLeft: '2.25rem', margin: 0 }} />
         </div>
         <div style={{ display: 'flex', gap: '0.4rem' }}>
+          {[['all', 'All'], ['due', 'Due only'], ['zero', 'Rs 0 only']].map(([key, label]) => (
+            <button key={key} onClick={() => setDueFilter(key)} style={{ padding: '0.4rem 0.9rem', borderRadius: 20, border: 'none', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, background: dueFilter === key ? 'var(--primary)' : 'rgba(0,0,0,0.06)', color: dueFilter === key ? '#fff' : 'var(--text-muted)', transition: 'all 0.15s' }}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: '0.4rem' }}>
           {[['az', 'A → Z'], ['za', 'Z → A']].map(([key, label]) => (
             <button key={key} onClick={() => setSort(key)} style={{ padding: '0.4rem 0.9rem', borderRadius: 20, border: 'none', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, background: sort === key ? 'var(--primary)' : 'rgba(0,0,0,0.06)', color: sort === key ? '#fff' : 'var(--text-muted)', transition: 'all 0.15s' }}>
               {label}
@@ -174,7 +186,7 @@ export default function CustomerDirectory() {
 
         {sorted.length === 0 ? (
           <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-            {search ? 'No customers match your search.' : 'No customers yet.'}
+            {search || dueFilter !== 'all' ? 'No customers match your search or filter.' : 'No customers yet.'}
           </div>
         ) : (
           sorted.map((c, i) => {
