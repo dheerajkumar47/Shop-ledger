@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { getAllTransactions, getCustomers } from '../services/db';
 import { format, isToday } from 'date-fns';
-import { Users, Truck, FileText, ArrowRight, ChevronRight, BookOpen } from 'lucide-react';
+import { Users, Truck, FileText, ArrowRight, ChevronRight, BookOpen, FileSpreadsheet } from 'lucide-react';
 
 export default function Dashboard() {
   const [todayTransactions, setTodayTransactions] = useState([]);
@@ -62,6 +62,7 @@ export default function Dashboard() {
           {actionCard('/add-party',          <Truck    size={20} color="#8b5cf6" />,        'Add New Party',        '#8b5cf6')}
           {actionCard('/statements',         <FileText size={20} color="#0ea5e9" />,        'View Statements',      '#0ea5e9')}
           {actionCard('/customer-directory', <BookOpen size={20} color="#10b981" />,        'Customer Directory',   '#10b981')}
+          {actionCard('/import-excel',       <FileSpreadsheet size={20} color="#f59e0b" />, 'Upload Daily Excel', '#f59e0b')}
         </div>
 
         {/* Registered Customers */}
