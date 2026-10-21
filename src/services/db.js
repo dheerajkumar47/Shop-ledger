@@ -228,9 +228,13 @@ export const importAllData = async (backup) => {
 
 // ── Daily Excel Import ──────────────────────────────────────────────────────
 // A row's key is date|name|detail|amount|type (payments ignore detail, since
-// manual payments are saved as "Payment Received"). Re-uploading the same
-// growing sheet only adds rows whose key occurs more times in the sheet than
-// it already does in the ledger — counting entries typed in by hand too.
+// manual payments are saved as "Payment Received"). Matching is by count, so
+// two identical rows on the same day are two entries:
+//  - rows already added by an earlier upload are skipped (same sheet uploaded again)
+//  - entries typed by hand before the first upload are offered as matches the
+//    user can choose to skip; a skipped row is then linked to that entry so
+//    later uploads count it as already added. Anything typed by hand after the
+//    first upload is never matched
 
 const pad2 = (n) => String(n).padStart(2, '0');
 
@@ -238,6 +242,8 @@ const localYmd = (iso) => {
   const d = new Date(iso);
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 };
+
+const tidy = (s) => (s || '').trim().replace(/\s+/g, ' ');
 
 export const makeImportKey = (ymd, name, detail, amount, type) =>
   [ymd, name.toLowerCase(), type === 'credit' ? '' : detail.toLowerCase(), Number(amount), type].join('|');
@@ -247,45 +253,68 @@ export const planSheetImport = async (rows) => {
   const allTx = await db.getAll(STORE_NAME);
   const customers = await db.getAll('customers');
 
-  const existingCount = {};
+  const importedIds = allTx.filter(tx => tx.importBatch).map(tx => tx.id);
+  const firstImportId = importedIds.length ? Math.min(...importedIds) : Infinity;
+
+  const importedCount = {};
+  const manualIds = {};
   for (const tx of allTx) {
-    const key = tx.importKey || makeImportKey(localYmd(tx.date), (tx.storeName || '').trim().replace(/\s+/g, ' '), (tx.itemName || '').trim().replace(/\s+/g, ' '), tx.amount, tx.type);
-    existingCount[key] = (existingCount[key] || 0) + 1;
+    if (tx.importKey) {
+      importedCount[tx.importKey] = (importedCount[tx.importKey] || 0) + 1;
+    } else if (tx.id < firstImportId) {
+      const key = makeImportKey(localYmd(tx.date), tidy(tx.storeName), tidy(tx.itemName), tx.amount, tx.type);
+      (manualIds[key] ??= []).push(tx.id);
+    }
   }
 
   // Map lowercase name -> canonical name already used in the app
   const knownNames = {};
   for (const c of customers) knownNames[c.name.toLowerCase()] = c.name;
   for (const tx of allTx) if (tx.storeName && !knownNames[tx.storeName.toLowerCase()]) knownNames[tx.storeName.toLowerCase()] = tx.storeName;
-  const customerSet = new Set(customers.map(c => c.name.toLowerCase()));
 
   const seenCount = {};
   const toAdd = [];
+  const manualMatches = [];
   let skipped = 0;
-  const newCustomers = [];
 
   for (const row of rows) {
     const lower = row.name.toLowerCase();
     if (!knownNames[lower]) knownNames[lower] = row.name;
-    const name = knownNames[lower];
-
     const key = makeImportKey(row.ymd, lower, row.detail, row.amount, row.type);
-    seenCount[key] = (seenCount[key] || 0) + 1;
-    if (seenCount[key] <= (existingCount[key] || 0)) { skipped++; continue; }
-    toAdd.push({ ...row, name, importKey: key });
-
-    if (!customerSet.has(lower)) {
-      customerSet.add(lower);
-      newCustomers.push(name);
-    }
+    const n = seenCount[key] = (seenCount[key] || 0) + 1;
+    const item = { ...row, name: knownNames[lower], importKey: key };
+    const already = importedCount[key] || 0;
+    if (n <= already) skipped++;
+    else if (n <= already + (manualIds[key]?.length || 0)) manualMatches.push({ ...item, manualTxId: manualIds[key][n - already - 1] });
+    else toAdd.push(item);
   }
 
-  return { toAdd, skipped, newCustomers };
+  return { toAdd, manualMatches, skipped, customerNames: customers.map(c => c.name.toLowerCase()) };
 };
 
-export const applySheetImport = async ({ toAdd, newCustomers }, fileName = '') => {
+// Rows to write (optionally including the hand-typed matches) and the customers they need
+export const finalizePlan = (plan, includeManualMatches) => {
+  const rows = includeManualMatches
+    ? [...plan.toAdd, ...plan.manualMatches].sort((a, b) => a.rowIndex - b.rowIndex)
+    : plan.toAdd;
+  const known = new Set(plan.customerNames);
+  const newCustomers = [];
+  for (const r of rows) {
+    const lower = r.name.toLowerCase();
+    if (!known.has(lower)) { known.add(lower); newCustomers.push(r.name); }
+  }
+  const links = includeManualMatches ? [] : plan.manualMatches.map(r => ({ id: r.manualTxId, importKey: r.importKey }));
+  return { toAdd: rows, newCustomers, links };
+};
+
+export const applySheetImport = async ({ toAdd, newCustomers, links = [] }, fileName = '') => {
   const db = await initDB();
   const batchId = Date.now();
+  // Hand-typed entries the user said are the same as sheet rows
+  for (const { id, importKey } of links) {
+    const tx = await db.get(STORE_NAME, id);
+    if (tx) await db.put(STORE_NAME, { ...tx, importKey });
+  }
   for (const name of newCustomers) {
     const existing = await db.get('customers', name);
     if (!existing) await db.put('customers', { name, mobile: '', address: '', createdByImport: batchId });

@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Upload, FileSpreadsheet, CheckCircle, AlertTriangle, Download, Undo2, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { planSheetImport, applySheetImport, getImportBatches, undoImportBatch, deleteImportedEntry } from '../services/db';
+import { planSheetImport, finalizePlan, applySheetImport, getImportBatches, undoImportBatch, deleteImportedEntry } from '../services/db';
 
 const CREDIT_WORDS = /\b(recei?ved?|recieved?|payment|paid|jama)\b/i;
 
@@ -84,6 +84,7 @@ export default function ImportExcel() {
   const fileRef = useRef(null);
   const [fileName, setFileName] = useState('');
   const [plan, setPlan] = useState(null);
+  const [manualChoice, setManualChoice] = useState(null); // 'add' | 'skip' for rows matching hand-typed entries
   const [errors, setErrors] = useState([]);
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
@@ -114,6 +115,7 @@ export default function ImportExcel() {
     setFileName(file.name);
     setStatus('');
     setPlan(null);
+    setManualChoice(null);
     try {
       const { rows, errors } = parseWorkbook(await file.arrayBuffer());
       setErrors(errors);
@@ -127,9 +129,9 @@ export default function ImportExcel() {
   const handleConfirm = async () => {
     setBusy(true);
     try {
-      await applySheetImport(plan, fileName);
+      await applySheetImport(final, fileName);
       loadBatches();
-      setStatus(`✅ Imported ${plan.toAdd.length} entries${plan.newCustomers.length ? ` and added ${plan.newCustomers.length} new customers` : ''}.`);
+      setStatus(`✅ Imported ${final.toAdd.length} entries${final.newCustomers.length ? ` and added ${final.newCustomers.length} new customers` : ''}.`);
       setPlan(null);
     } catch (err) {
       setStatus('❌ Import failed: ' + err.message);
@@ -150,7 +152,9 @@ export default function ImportExcel() {
     XLSX.writeFile(wb, 'daily-udhar-template.xlsx');
   };
 
-  const totals = plan ? plan.toAdd.reduce((t, r) => { t[r.type] += r.amount; return t; }, { debit: 0, credit: 0 }) : null;
+  const final = plan ? finalizePlan(plan, manualChoice === 'add') : null;
+  const needsChoice = plan && plan.manualMatches.length > 0 && !manualChoice;
+  const totals = final ? final.toAdd.reduce((t, r) => { t[r.type] += r.amount; return t; }, { debit: 0, credit: 0 }) : null;
 
   return (
     <div className="settings-container">
@@ -210,18 +214,51 @@ export default function ImportExcel() {
         <div className="glass-card mb-4">
           <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.75rem' }}>Preview</h3>
           <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap', fontSize: '0.9rem', marginBottom: '1rem' }}>
-            <span><b>{plan.toAdd.length}</b> new entries</span>
-            <span style={{ color: 'var(--text-muted)' }}><b>{plan.skipped}</b> already imported (skipped)</span>
+            <span><b>{final.toAdd.length}</b> entries to add</span>
+            <span style={{ color: 'var(--text-muted)' }}><b>{plan.skipped}</b> already added by an earlier upload</span>
             <span style={{ color: 'var(--danger)' }}>Udhar: <b>Rs {totals.debit.toLocaleString()}</b></span>
             <span style={{ color: 'var(--success)' }}>Received: <b>Rs {totals.credit.toLocaleString()}</b></span>
           </div>
-          {plan.newCustomers.length > 0 && (
+          {final.newCustomers.length > 0 && (
             <p style={{ fontSize: '0.875rem', marginBottom: '1rem' }}>
-              <b>New customers to add ({plan.newCustomers.length}):</b> {plan.newCustomers.join(', ')}
+              <b>New customers to add ({final.newCustomers.length}):</b> {final.newCustomers.join(', ')}
             </p>
           )}
 
-          {plan.toAdd.length === 0 ? (
+          {plan.manualMatches.length > 0 && (
+            <div style={{ border: '1px solid rgba(245,158,11,0.45)', background: 'rgba(245,158,11,0.07)', borderRadius: 10, padding: '1rem', marginBottom: '1rem' }}>
+              <p style={{ fontWeight: 600, fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.35rem' }}>
+                <AlertTriangle size={17} color="#d97706" /> {plan.manualMatches.length} row(s) look the same as entries you typed into the app by hand
+              </p>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
+                Same date, name, item and amount. If you typed these from this sheet earlier, skip them so they are not counted twice. If the customer really bought it again, add them.
+              </p>
+              <div style={{ overflowX: 'auto', maxHeight: 220, overflowY: 'auto', marginBottom: '0.75rem' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                  <tbody>
+                    {plan.manualMatches.map((r, i) => (
+                      <tr key={i} style={{ borderTop: i ? '1px solid rgba(245,158,11,0.25)' : 'none' }}>
+                        <td style={{ padding: '0.35rem 0.5rem', whiteSpace: 'nowrap' }}>{formatYmd(r.ymd)}</td>
+                        <td style={{ padding: '0.35rem 0.5rem' }}>{r.name}</td>
+                        <td style={{ padding: '0.35rem 0.5rem' }}>{r.detail}</td>
+                        <td style={{ padding: '0.35rem 0.5rem', textAlign: 'right', fontWeight: 600, whiteSpace: 'nowrap' }}>Rs {r.amount}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                {[['skip', `Skip these ${plan.manualMatches.length} (already in the app)`], ['add', `Add these ${plan.manualMatches.length} too (new purchases)`]].map(([val, label]) => (
+                  <button key={val} onClick={() => setManualChoice(val)} className="btn"
+                    style={{ width: 'auto', padding: '0.5rem 0.9rem', fontSize: '0.85rem', border: `1px solid ${manualChoice === val ? 'var(--primary)' : 'rgba(0,0,0,0.12)'}`, background: manualChoice === val ? 'var(--primary)' : 'white', color: manualChoice === val ? 'white' : 'var(--text-main)' }}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {final.toAdd.length === 0 && plan.manualMatches.length === 0 ? (
             <p style={{ color: 'var(--text-muted)' }}>Nothing new in this sheet — everything is already in the ledger.</p>
           ) : (
             <>
@@ -236,7 +273,7 @@ export default function ImportExcel() {
                     </tr>
                   </thead>
                   <tbody>
-                    {plan.toAdd.map((r, i) => (
+                    {final.toAdd.map((r, i) => (
                       <tr key={i} style={{ borderTop: '1px solid var(--border, #e5e7eb)' }}>
                         <td style={{ padding: '0.5rem 0.6rem' }}>{formatYmd(r.ymd)}</td>
                         <td style={{ padding: '0.5rem 0.6rem' }}>{r.name}</td>
@@ -249,8 +286,8 @@ export default function ImportExcel() {
                   </tbody>
                 </table>
               </div>
-              <button onClick={handleConfirm} disabled={busy} className="btn btn-primary mt-4">
-                <CheckCircle size={18} /> {busy ? 'Importing...' : `Import ${plan.toAdd.length} Entries`}
+              <button onClick={handleConfirm} disabled={busy || needsChoice || (final.toAdd.length === 0 && final.links.length === 0)} className="btn btn-primary mt-4">
+                <CheckCircle size={18} /> {busy ? 'Importing...' : needsChoice ? 'Choose skip or add above' : `Import ${final.toAdd.length} Entries`}
               </button>
             </>
           )}
