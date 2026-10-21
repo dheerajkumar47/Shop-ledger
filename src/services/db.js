@@ -311,19 +311,26 @@ export const applySheetImport = async ({ toAdd, newCustomers, links = [] }, file
   const db = await initDB();
   const batchId = Date.now();
   // Hand-typed entries the user said are the same as sheet rows
+  // One transaction for everything: fast for sheets with tens of thousands of rows
+  const t = db.transaction([STORE_NAME, 'customers'], 'readwrite');
+  const txStore = t.objectStore(STORE_NAME);
+  const custStore = t.objectStore('customers');
   for (const { id, importKey } of links) {
-    const tx = await db.get(STORE_NAME, id);
-    if (tx) await db.put(STORE_NAME, { ...tx, importKey });
+    const tx = await txStore.get(id);
+    if (tx) txStore.put({ ...tx, importKey });
   }
   for (const name of newCustomers) {
-    const existing = await db.get('customers', name);
-    if (!existing) await db.put('customers', { name, mobile: '', address: '', createdByImport: batchId });
+    const existing = await custStore.get(name);
+    if (!existing) custStore.put({ name, mobile: '', address: '', createdByImport: batchId });
   }
+  const perDay = {};
   for (const row of toAdd) {
     const [y, m, d] = row.ymd.split('-').map(Number);
-    // Local noon + row offset keeps the date stable across timezones and preserves sheet order
-    const date = new Date(y, m - 1, d, 12, 0, row.rowIndex % 3600);
-    await db.add(STORE_NAME, {
+    // From 6 AM local, one second apart per row of that day: the date never shifts
+    // across timezones and entries keep the sheet's order
+    const seq = perDay[row.ymd] = (perDay[row.ymd] ?? -1) + 1;
+    const date = new Date(y, m - 1, d, 6, 0, seq);
+    txStore.add({
       storeName: row.name,
       itemName: row.detail || (row.type === 'credit' ? 'Payment Received' : 'Udhar'),
       amount: row.amount,
@@ -334,6 +341,7 @@ export const applySheetImport = async ({ toAdd, newCustomers, links = [] }, file
       importFile: fileName,
     });
   }
+  await t.done;
   return batchId;
 };
 
@@ -357,9 +365,11 @@ export const getImportBatches = async () => {
 export const undoImportBatch = async (batchId) => {
   const db = await initDB();
   const allTx = await db.getAll(STORE_NAME);
+  const t = db.transaction(STORE_NAME, 'readwrite');
   for (const tx of allTx) {
-    if (tx.importBatch === batchId) await db.delete(STORE_NAME, tx.id);
+    if (tx.importBatch === batchId) t.store.delete(tx.id);
   }
+  await t.done;
   await removeEmptyImportedCustomers(batchId);
 };
 

@@ -4,8 +4,6 @@ import { ArrowLeft, Upload, FileSpreadsheet, CheckCircle, AlertTriangle, Downloa
 import * as XLSX from 'xlsx';
 import { planSheetImport, finalizePlan, applySheetImport, getImportBatches, undoImportBatch, deleteImportedEntry } from '../services/db';
 
-const CREDIT_WORDS = /\b(recei?ved?|recieved?|payment|paid|jama)\b/i;
-
 const pad = (n) => String(n).padStart(2, '0');
 
 // Accepts Excel serial dates, Date objects and day-first strings (20/10/2026, 20-10-26, 2026-10-20)
@@ -37,11 +35,52 @@ function valid(y, mo, d) {
 
 const formatYmd = (ymd) => ymd.split('-').reverse().join('/');
 
-// Reads the first sheet into { rows, errors }. Header row is optional;
+const PREVIEW_LIMIT = 300;
+
+// Shrinks a sheet's range to the cells actually used; Excel often reports
+// a range down to row 1,048,576, which makes reading very slow
+function trimRange(sheet) {
+  if (!sheet['!ref']) return;
+  const range = XLSX.utils.decode_range(sheet['!ref']);
+  let maxR = range.s.r, maxC = range.s.c;
+  for (const key in sheet) {
+    if (key[0] === '!') continue;
+    const { r, c } = XLSX.utils.decode_cell(key);
+    if (r > maxR) maxR = r;
+    if (c > maxC) maxC = c;
+  }
+  range.e.r = maxR;
+  range.e.c = maxC;
+  sheet['!ref'] = XLSX.utils.encode_range(range);
+}
+
+// The tab whose first row looks most like Date | Name | Detail | Amount
+// (a workbook may also hold pivot or summary tabs); falls back to the first tab
+function pickSheet(wb) {
+  let best = wb.SheetNames[0], bestScore = 0;
+  for (const name of wb.SheetNames) {
+    const sheet = wb.Sheets[name];
+    if (!sheet['!ref']) continue;
+    const range = XLSX.utils.decode_range(sheet['!ref']);
+    const header = [];
+    for (let c = range.s.c; c <= Math.min(range.e.c, range.s.c + 20); c++) {
+      const cell = sheet[XLSX.utils.encode_cell({ r: range.s.r, c })];
+      if (cell) header.push(String(cell.v).toLowerCase());
+    }
+    const score = [/date/, /name|customer/, /amount|amt/, /detail|item|description|particular/].filter(re => header.some(h => re.test(h))).length;
+    if (score > bestScore) { best = name; bestScore = score; }
+  }
+  return best;
+}
+
+// Reads the data tab into { rows, errors, sheetName }. Header row is optional;
 // without one the columns are taken as Date | Name | Detail | Amount.
+// A minus amount is a payment received, anything else is udhar.
 function parseWorkbook(data) {
-  const wb = XLSX.read(data, { type: 'array' });
-  const sheet = wb.Sheets[wb.SheetNames[0]];
+  const wb = XLSX.read(data, { type: 'array', cellText: false, cellHTML: false, cellNF: false, cellStyles: false });
+  const sheetName = pickSheet(wb);
+  const sheet = wb.Sheets[sheetName];
+  trimRange(sheet);
   const grid = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: '' });
 
   let cols = { date: 0, name: 1, detail: 2, amount: 3 };
@@ -71,12 +110,12 @@ function parseWorkbook(data) {
 
     if (!ymd) { errors.push(`Row ${excelRow}: invalid date "${r[cols.date]}"`); continue; }
     if (!name) { errors.push(`Row ${excelRow}: customer name missing`); continue; }
-    if (!rawAmount || isNaN(rawAmount)) { errors.push(`Row ${excelRow}: invalid amount "${r[cols.amount]}"`); continue; }
+    if (isNaN(rawAmount) || String(r[cols.amount]).trim() === '') { errors.push(`Row ${excelRow}: invalid amount "${r[cols.amount]}"`); continue; }
+    if (rawAmount === 0) { errors.push(`Row ${excelRow}: amount is 0 (${name})`); continue; }
 
-    const isCredit = rawAmount < 0 || CREDIT_WORDS.test(detail);
-    rows.push({ rowIndex: i, ymd, name, detail, amount: Math.abs(rawAmount), type: isCredit ? 'credit' : 'debit' });
+    rows.push({ rowIndex: i, ymd, name, detail, amount: Math.abs(rawAmount), type: rawAmount < 0 ? 'credit' : 'debit' });
   }
-  return { rows, errors };
+  return { rows, errors, sheetName };
 }
 
 export default function ImportExcel() {
@@ -88,6 +127,8 @@ export default function ImportExcel() {
   const [errors, setErrors] = useState([]);
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
+  const [reading, setReading] = useState(false);
+  const [sheetName, setSheetName] = useState('');
   const [batches, setBatches] = useState([]);
   const [openBatch, setOpenBatch] = useState(null);
   const [confirmUndo, setConfirmUndo] = useState(null);
@@ -116,14 +157,20 @@ export default function ImportExcel() {
     setStatus('');
     setPlan(null);
     setManualChoice(null);
+    setErrors([]);
+    setSheetName('');
+    setReading(true);
     try {
-      const { rows, errors } = parseWorkbook(await file.arrayBuffer());
+      const data = await file.arrayBuffer();
+      await new Promise(r => setTimeout(r, 50)); // let "Reading..." paint before the parse blocks the page
+      const { rows, errors, sheetName } = parseWorkbook(data);
+      setSheetName(sheetName);
       setErrors(errors);
       setPlan(await planSheetImport(rows));
     } catch {
-      setErrors([]);
       setStatus('❌ Could not read this file. Please upload an Excel (.xlsx / .xls) or .csv file.');
     }
+    setReading(false);
   };
 
   const handleConfirm = async () => {
@@ -144,7 +191,7 @@ export default function ImportExcel() {
       ['Date', 'Name', 'Detail', 'Amount'],
       ['20/10/2026', 'Bhavesh kumar', 'Chips and chocolates', 50],
       ['20/10/2026', 'Vijay kumar', 'Sting', 90],
-      ['21/10/2026', 'Bhavesh kumar', 'Received', 100],
+      ['21/10/2026', 'Bhavesh kumar', 'Received', -100],
     ]);
     ws['!cols'] = [{ wch: 12 }, { wch: 22 }, { wch: 28 }, { wch: 10 }];
     const wb = XLSX.utils.book_new();
@@ -168,7 +215,7 @@ export default function ImportExcel() {
       <div className="glass-card mb-4" style={{ border: '1px solid rgba(16,185,129,0.25)', background: 'rgba(16,185,129,0.03)' }}>
         <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--success)' }}>Sheet format</h3>
         <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
-          Columns: <b>Date | Name | Detail | Amount</b> (date as DD/MM/YYYY). Write <b>Received</b> in Detail for a payment.
+          Columns: <b>Date | Name | Detail | Amount</b> (date as DD/MM/YYYY). For a payment received, put a minus amount (e.g. <b>-500</b>); every other amount is udhar.
           New customer names are added automatically. You can upload the same sheet every day — entries already imported are skipped, only new rows are added.
         </p>
         <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
@@ -182,7 +229,8 @@ export default function ImportExcel() {
         </div>
         {fileName && (
           <p style={{ marginTop: '0.75rem', fontSize: '0.85rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <FileSpreadsheet size={16} /> {fileName}
+            <FileSpreadsheet size={16} /> {fileName}{sheetName && <> · tab “{sheetName}”</>}
+            {reading && <b style={{ color: 'var(--primary)' }}> · Reading file… large sheets take a few seconds</b>}
           </p>
         )}
       </div>
@@ -236,7 +284,7 @@ export default function ImportExcel() {
               <div style={{ overflowX: 'auto', maxHeight: 220, overflowY: 'auto', marginBottom: '0.75rem' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
                   <tbody>
-                    {plan.manualMatches.map((r, i) => (
+                    {plan.manualMatches.slice(0, PREVIEW_LIMIT).map((r, i) => (
                       <tr key={i} style={{ borderTop: i ? '1px solid rgba(245,158,11,0.25)' : 'none' }}>
                         <td style={{ padding: '0.35rem 0.5rem', whiteSpace: 'nowrap' }}>{formatYmd(r.ymd)}</td>
                         <td style={{ padding: '0.35rem 0.5rem' }}>{r.name}</td>
@@ -244,6 +292,9 @@ export default function ImportExcel() {
                         <td style={{ padding: '0.35rem 0.5rem', textAlign: 'right', fontWeight: 600, whiteSpace: 'nowrap' }}>Rs {r.amount}</td>
                       </tr>
                     ))}
+                    {plan.manualMatches.length > PREVIEW_LIMIT && (
+                      <tr><td colSpan={4} style={{ padding: '0.5rem 0.6rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>…and {(plan.manualMatches.length - PREVIEW_LIMIT).toLocaleString()} more (showing first {PREVIEW_LIMIT})</td></tr>
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -273,7 +324,7 @@ export default function ImportExcel() {
                     </tr>
                   </thead>
                   <tbody>
-                    {final.toAdd.map((r, i) => (
+                    {final.toAdd.slice(0, PREVIEW_LIMIT).map((r, i) => (
                       <tr key={i} style={{ borderTop: '1px solid var(--border, #e5e7eb)' }}>
                         <td style={{ padding: '0.5rem 0.6rem' }}>{formatYmd(r.ymd)}</td>
                         <td style={{ padding: '0.5rem 0.6rem' }}>{r.name}</td>
@@ -283,6 +334,9 @@ export default function ImportExcel() {
                         </td>
                       </tr>
                     ))}
+                    {final.toAdd.length > PREVIEW_LIMIT && (
+                      <tr><td colSpan={4} style={{ padding: '0.5rem 0.6rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>…and {(final.toAdd.length - PREVIEW_LIMIT).toLocaleString()} more (showing first {PREVIEW_LIMIT})</td></tr>
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -337,7 +391,7 @@ export default function ImportExcel() {
                     <div style={{ overflowX: 'auto', maxHeight: 360, overflowY: 'auto', borderTop: '1px solid var(--border, #e5e7eb)' }}>
                       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
                         <tbody>
-                          {b.entries.map(tx => (
+                          {b.entries.slice(0, PREVIEW_LIMIT).map(tx => (
                             <tr key={tx.id} style={{ borderTop: '1px solid var(--border, #e5e7eb)' }}>
                               <td style={{ padding: '0.45rem 1rem', whiteSpace: 'nowrap' }}>{new Date(tx.date).toLocaleDateString('en-GB')}</td>
                               <td style={{ padding: '0.45rem 0.6rem' }}>{tx.storeName}</td>
@@ -352,6 +406,9 @@ export default function ImportExcel() {
                               </td>
                             </tr>
                           ))}
+                          {b.entries.length > PREVIEW_LIMIT && (
+                            <tr><td colSpan={5} style={{ padding: '0.5rem 0.6rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>…and {(b.entries.length - PREVIEW_LIMIT).toLocaleString()} more (showing first {PREVIEW_LIMIT})</td></tr>
+                          )}
                         </tbody>
                       </table>
                     </div>
